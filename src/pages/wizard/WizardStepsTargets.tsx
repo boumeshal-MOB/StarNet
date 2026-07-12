@@ -9,6 +9,7 @@ import { repository } from '../../data/repository';
 import { fmtMm } from '../../lib/format';
 import type { ReferencePoint, TargetMapping } from '../../types/domain';
 import { PointIdentityPanel } from '../../components/PointIdentityPanel';
+import { resolveEngineName, targetSourceKey } from '../../engine/pointIdentity';
 
 // ============================================================ Step 4 =======
 export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraft>) => void }) {
@@ -16,33 +17,58 @@ export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Parti
   const [filterRole, setFilterRole] = useState('all');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [batchOpen, setBatchOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const prisms = repository.prismProfiles();
 
   const patchTarget = (id: string, p: Partial<TargetMapping>) => {
-    set({
-      targets: draft.targets.map((t) => {
+    const current = draft.targets.find((t) => t.id === id);
+    const targets = draft.targets.map((t) => {
         if (t.id !== id) return t;
         const next = { ...t, ...p, source: 'manual-override' as const };
         next.nomenclatureIssues = nomenclatureIssues(next.adjustmentName,
           draft.targets.filter((x) => x.stationIds[0] === next.stationIds[0]).map((x) => x.id === id ? next.adjustmentName : x.adjustmentName));
         return next;
-      }),
-    });
+      });
+    // For a point observed by one prism, the editable adjustment label is also
+    // the actual engine id. Shared points keep their explicit common engine id.
+    const point = current && draft.physicalPoints.find((pp) => pp.id === current.physicalPointId);
+    const physicalPoints = point && point.btmPrismIds.length === 1
+      ? draft.physicalPoints.map((pp) => pp.id === point.id ? {
+          ...pp,
+          ...(p.adjustmentName !== undefined ? { engineName: p.adjustmentName, label: p.adjustmentName } : {}),
+          ...(p.outputName !== undefined ? { outputName: p.outputName } : {}),
+          ...(p.role !== undefined ? { role: p.role } : {}),
+        } : pp)
+      : draft.physicalPoints;
+    set({ targets, physicalPoints });
   };
 
   const batchPatch = (p: Partial<TargetMapping>) => {
+    const selectedTargets = draft.targets.filter((t) => selected.has(t.id));
+    const selectedSourceKeys = new Set(selectedTargets.flatMap((t) =>
+      t.stationIds.map((stationId) => targetSourceKey(stationId, t.rawName))));
+    const prism = p.prismProfileId ? prisms.find((x) => x.id === p.prismProfileId) : undefined;
     set({
       targets: draft.targets.map((t) => selected.has(t.id)
         ? { ...t, ...p, source: 'manual-override' as const } : t),
+      setups: prism ? draft.setups.map((setup) => selectedSourceKeys.has(targetSourceKey(setup.stationId, setup.targetKey))
+        ? { ...setup, prismProfileId: prism.id, effectiveConstantM: prism.effectiveConstantM, source: 'manual-override' as const }
+        : setup) : draft.setups,
     });
     setBatchOpen(false);
   };
 
   const detectNew = () => {
-    const mapped = new Set(draft.targets.map((t) => t.rawName));
-    const observed = new Set(repository.observations()
-      .filter((o) => draft.stationIds.includes(o.stationId)).map((o) => o.rawTargetName));
-    const newOnes = [...observed].filter((n) => !mapped.has(n));
+    const mapped = new Set(draft.targets.flatMap((t) =>
+      t.stationIds.map((stationId) => targetSourceKey(stationId, t.rawName))));
+    const observed = new Map<string, { stationId: string; rawName: string }>();
+    for (const observation of repository.observations().filter((o) => draft.stationIds.includes(o.stationId))) {
+      observed.set(targetSourceKey(observation.stationId, observation.rawTargetName), {
+        stationId: observation.stationId,
+        rawName: observation.rawTargetName,
+      });
+    }
+    const newOnes = [...observed.entries()].filter(([key]) => !mapped.has(key)).map(([, value]) => value);
     if (newOnes.length === 0) {
       alert('No unmapped target detected in the observations.');
       return;
@@ -50,17 +76,24 @@ export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Parti
     // every new prism gets its own distinct physical point (unresolved)
     const newTargets: TargetMapping[] = [];
     const newPoints: typeof draft.physicalPoints = [];
-    newOnes.forEach((rawName, i) => {
-      const stationId = repository.observations()
-        .find((o) => o.rawTargetName === rawName && draft.stationIds.includes(o.stationId))?.stationId ?? '';
-      const adjustmentName = rawName.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 15);
+    const newSetups: typeof draft.setups = [];
+    newOnes.forEach(({ stationId, rawName }, i) => {
+      const baseName = rawName.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 15);
+      const taken = new Set([...draft.physicalPoints, ...newPoints].map((pp) => pp.engineName));
+      let adjustmentName = baseName || 'PT';
+      let suffix = 2;
+      while (taken.has(adjustmentName)) {
+        const tail = `_${suffix++}`;
+        adjustmentName = `${baseName.slice(0, 15 - tail.length)}${tail}`;
+      }
       const ppId = `pp-new-${Date.now()}-${i}`;
+      const btmPrismId = `PRISM-${stationId}-${rawName}`;
       newPoints.push({
         id: ppId,
         label: adjustmentName,
         engineName: adjustmentName,
         role: 'auxiliary',
-        btmPrismIds: [`PRISM-${stationId}-${rawName}`],
+        btmPrismIds: [btmPrismId],
         state: 'unresolved',
         source: 'default',
         rationale: 'New target detected in the observations - identity not confirmed',
@@ -68,10 +101,10 @@ export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Parti
       newTargets.push({
         id: `new-${Date.now()}-${i}`,
         stationIds: [stationId],
-        btmPrismId: `PRISM-${stationId}-${rawName}`,
+        btmPrismId,
         rawName,
         adjustmentName,
-        outputName: `NTE_ATS34_${rawName}`,
+        outputName: `${stationId}_${rawName}`,
         physicalPointId: ppId,
         role: 'auxiliary',
         prismProfileId: 'prism-std0',
@@ -84,10 +117,21 @@ export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Parti
         initialCoordinateStatus: 'to-review',
         nomenclatureIssues: [],
       });
+      const defaultPrism = prisms.find((p) => p.id === 'prism-std0') ?? prisms[0];
+      newSetups.push({
+        stationId,
+        targetKey: rawName,
+        prismProfileId: defaultPrism?.id ?? 'prism-std0',
+        effectiveConstantM: defaultPrism?.effectiveConstantM ?? 0,
+        constantAppliedByStationM: draft.stations.find((s) => s.id === stationId)?.constantAppliedByStationM ?? 0,
+        targetHeightM: 0,
+        source: 'manual-override',
+      });
     });
     set({
       targets: [...draft.targets, ...newTargets],
       physicalPoints: [...draft.physicalPoints, ...newPoints],
+      setups: [...draft.setups, ...newSetups],
     });
   };
 
@@ -105,6 +149,9 @@ export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Parti
           <Button size="xs" onClick={detectNew}>Detect new targets</Button>
           <Button size="xs" disabled={selected.size === 0} onClick={() => setBatchOpen(true)}>
             Batch edit ({selected.size})
+          </Button>
+          <Button size="xs" variant={advancedOpen ? 'primary' : 'secondary'} onClick={() => setAdvancedOpen(!advancedOpen)}>
+            {advancedOpen ? 'Hide advanced' : 'Advanced options'}
           </Button>
         </div>
       }>
@@ -125,10 +172,14 @@ export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Parti
             <th><input type="checkbox"
               checked={selected.size === rows.length && rows.length > 0}
               onChange={(e) => setSelected(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set())} /></th>
-            <th>Station</th><th>Raw target name</th><th>Adjustment name</th><th>BTM output name</th>
-            <th>Role</th><th>Prism template</th><th>Grade</th><th>Height (m)</th>
-            <th>Effective const (mm)</th><th>Applied in station (mm)</th><th>BTM correction (mm)</th>
-            <th>Initial coords</th><th>Include</th><th>Publish</th><th>Source</th>
+            <th>Station</th><th>Raw target name</th>
+            {advancedOpen && <th>Adjustment label</th>}
+            <th>Engine point ID</th>
+            {advancedOpen && <th>BTM output name</th>}
+            <th>Role</th><th>Prism template</th>
+            {advancedOpen && <><th>Grade</th><th>Height (m)</th><th>Effective const (mm)</th><th>Applied in station (mm)</th></>}
+            <th>BTM correction (mm)</th><th>Initial coords</th><th>Include</th><th>Publish</th>
+            {advancedOpen && <th>Source</th>}
           </tr>
         </thead>
         <tbody>
@@ -147,15 +198,16 @@ export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Parti
                 <td className="font-medium">{t.rawName}
                   {t.reviewStatus === 'to-review' && <Badge tone="Provisional">To review</Badge>}
                 </td>
-                <td>
+                {advancedOpen && <td>
                   <input className="input !w-24 !px-1 !py-0.5 !text-xs" value={t.adjustmentName}
                     onChange={(e) => patchTarget(t.id, { adjustmentName: e.target.value })} />
                   {t.nomenclatureIssues.length > 0 && <span className="text-rose-600"> ⚠</span>}
-                </td>
-                <td>
+                </td>}
+                <td className="font-mono text-2xs text-brand-700">{resolveEngineName(t, draft.physicalPoints)}</td>
+                {advancedOpen && <td>
                   <input className="input !w-40 !px-1 !py-0.5 !text-xs" value={t.outputName}
                     onChange={(e) => patchTarget(t.id, { outputName: e.target.value })} />
-                </td>
+                </td>}
                 <td>
                   <select className="input !w-28 !px-1 !py-0.5 !text-xs" value={t.role}
                     onChange={(e) => patchTarget(t.id, { role: e.target.value as TargetMapping['role'] })}>
@@ -171,7 +223,7 @@ export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Parti
                       patchTarget(t.id, { prismProfileId: e.target.value });
                       if (prism) {
                         set({
-                          setups: draft.setups.map((s) => s.targetKey === t.rawName
+                          setups: draft.setups.map((s) => s.targetKey === t.rawName && t.stationIds.includes(s.stationId)
                             ? { ...s, prismProfileId: prism.id, effectiveConstantM: prism.effectiveConstantM, source: 'manual-override' }
                             : s),
                         });
@@ -180,17 +232,19 @@ export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Parti
                     {prisms.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
                 </td>
-                <td>{t.grade ?? '-'}</td>
-                <td>{t.targetHeightM.toFixed(3)}</td>
-                <td className="text-right">{fmtMm(setup?.effectiveConstantM, 1)}</td>
-                <td className="text-right">{fmtMm(setup?.constantAppliedByStationM, 1)}</td>
+                {advancedOpen && <>
+                  <td>{t.grade ?? '-'}</td>
+                  <td>{t.targetHeightM.toFixed(3)}</td>
+                  <td className="text-right">{fmtMm(setup?.effectiveConstantM, 1)}</td>
+                  <td className="text-right">{fmtMm(setup?.constantAppliedByStationM, 1)}</td>
+                </>}
                 <td className="text-right font-medium">{fmtMm(delta, 1)}</td>
                 <td><Badge tone={t.initialCoordinateStatus === 'computed' ? 'Success' : 'Draft'}>{t.initialCoordinateStatus}</Badge></td>
                 <td><Toggle checked={t.includeInAdjustment} onChange={(v) => patchTarget(t.id, { includeInAdjustment: v })} /></td>
                 <td><Toggle checked={t.publishOutput} onChange={(v) => patchTarget(t.id, { publishOutput: v })} /></td>
-                <td>{t.source === 'manual-override'
+                {advancedOpen && <td>{t.source === 'manual-override'
                   ? <Badge tone="Provisional">Modified from template</Badge>
-                  : <Badge>Template</Badge>}</td>
+                  : <Badge>Template</Badge>}</td>}
               </tr>
             );
           })}
@@ -270,7 +324,8 @@ export function StepReferences({ draft, set }: { draft: WizardDraft; set: (p: Pa
     if (constrained < 4) messages.push('Datum is weak: fewer than 4 constrained components (E/N/H coverage incomplete)');
     const es = activeSet.points.map((p) => p.easting);
     const ns = activeSet.points.map((p) => p.northing);
-    const spread = Math.hypot(Math.max(...es) - Math.min(...es), Math.max(...ns) - Math.min(...ns));
+    const spread = activeSet.points.length > 0
+      ? Math.hypot(Math.max(...es) - Math.min(...es), Math.max(...ns) - Math.min(...ns)) : 0;
     if (spread < 50) messages.push('References are geometrically clustered (span < 50 m): orientation is poorly controlled');
     const hCovered = activeSet.points.some((p) => p.modeH !== 'free');
     if (!hCovered) messages.push('No height component constrained: vertical datum missing (rank deficiency expected)');
@@ -305,11 +360,18 @@ export function StepReferences({ draft, set }: { draft: WizardDraft; set: (p: Pa
       <Card title="Step 5 - References and Constraints"
         actions={
           <div className="flex gap-2">
-            <Select value={draft.selectedRefSetId} onChange={(v) => set({ selectedRefSetId: v })}
+            <Select value={draft.selectedRefSetId} onChange={(v) => set({
+              selectedRefSetId: v,
+              initMode: draft.refSets.find((item) => item.id === v)?.points.length === 0
+                ? 'local-anchor' : draft.initMode,
+            })}
               options={draft.refSets.map((r) => ({ value: r.id, label: `${r.name} (from ${r.validFrom.slice(0, 10)})` }))} />
             <Button size="xs" onClick={duplicateSet}>Duplicate set</Button>
           </div>
         }>
+        {activeSet.points.length === 0 && (
+          <Callout tone="info">Local datum selected: no external reference coordinates will be constrained. In the next step, choose the fixed anchor station and its orientation.</Callout>
+        )}
         <TableWrap maxH="max-h-72">
           <thead>
             <tr>

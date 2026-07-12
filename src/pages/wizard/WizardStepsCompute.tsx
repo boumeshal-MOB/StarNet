@@ -14,6 +14,11 @@ import { NetworkView } from '../../components/NetworkView';
 // ============================================================ Step 6 =======
 export function StepInitial({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraft>) => void }) {
   const [computed, setComputed] = useState(draft.provisional.length > 0);
+  const anchorId = draft.initAnchorStationId || draft.stationIds[0] || '';
+  const anchor = draft.stations.find((station) => station.id === anchorId);
+  const patchAnchor = (patch: Partial<NonNullable<typeof anchor>>) => set({
+    stations: draft.stations.map((station) => station.id === anchorId ? { ...station, ...patch } : station),
+  });
 
   const compute = () => {
     const refSet = draft.refSets.find((r) => r.id === draft.selectedRefSetId);
@@ -52,6 +57,8 @@ export function StepInitial({ draft, set }: { draft: WizardDraft; set: (p: Parti
       nameMap,
       targetHeights: new Map(draft.targets.map((t) => [resolveEngineName(t, draft.physicalPoints), t.targetHeightM])),
       referenceIds: new Set(refSet.points.map((p) => p.pointId)),
+      fixedOrientations: draft.initMode === 'local-anchor'
+        ? new Map([[anchorId, draft.initAnchorOrientationDeg * Math.PI / 180]]) : undefined,
       epochFrom: new Date(fromMs).toISOString(),
       epochTo: new Date(toMs).toISOString(),
     });
@@ -60,6 +67,16 @@ export function StepInitial({ draft, set }: { draft: WizardDraft; set: (p: Parti
       orientations: result.orientations,
       initFailures: result.failures,
       provisionalSaved: false,
+      stations: draft.stations.map((station) => {
+        const solved = result.orientations.find((item) => item.stationId === station.id);
+        return solved?.estimatedE !== undefined ? {
+          ...station,
+          approxE: solved.estimatedE,
+          approxN: solved.estimatedN ?? station.approxN,
+          approxH: solved.estimatedH ?? station.approxH,
+          adjustable: draft.initMode === 'local-anchor' && station.id === anchorId ? false : station.adjustable,
+        } : station;
+      }),
       targets: draft.targets.map((t) => result.provisional.some((p) => p.targetId === resolveEngineName(t, draft.physicalPoints))
         ? { ...t, initialCoordinateStatus: 'computed' as const } : t),
     });
@@ -80,7 +97,14 @@ export function StepInitial({ draft, set }: { draft: WizardDraft; set: (p: Parti
         actions={
           <Button variant="primary" size="xs" onClick={compute}>Compute initial coordinates</Button>
         }>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <Field label="Initialization method">
+            <Select value={draft.initMode} onChange={(value) => set({ initMode: value as WizardDraft['initMode'], provisionalSaved: false })}
+              options={[
+                { value: 'known-references', label: 'Known reference coordinates' },
+                { value: 'local-anchor', label: 'Local datum — fix one station' },
+              ]} />
+          </Field>
           <Field label="Representative period from" hint="Cycle(s) used for the initialization.">
             <TextInput type="datetime-local" value={draft.initWindowFrom}
               onChange={(e) => set({ initWindowFrom: e.target.value })} />
@@ -89,23 +113,44 @@ export function StepInitial({ draft, set }: { draft: WizardDraft; set: (p: Parti
             <TextInput type="datetime-local" value={draft.initWindowTo}
               onChange={(e) => set({ initWindowTo: e.target.value })} />
           </Field>
-          <div className="self-end text-2xs text-slate-500">
+          <div className="self-end text-2xs leading-5 text-slate-500">
             Distances are corrected (prism + atmosphere), each station is oriented by weighted circular
-            mean over its known references, then polar observations become E/N/H. Multi-station targets
-            are combined and their spread is reported.
+            mean over known references or propagated from the fixed station through common physical points.
           </div>
         </div>
+        {draft.initMode === 'local-anchor' && anchor && (
+          <div className="mt-5 rounded-xl border border-brand-100 bg-brand-50/60 p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <div className="text-xs font-semibold text-brand-900">Local datum anchor</div>
+                <div className="text-2xs text-brand-700">The anchor is held fixed; other stations can be resected from at least two confirmed common points.</div>
+              </div>
+              <Badge tone="Ready">Fixed for adjustment</Badge>
+            </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
+              <Field label="Anchor station"><Select value={anchorId} onChange={(value) => set({ initAnchorStationId: value, provisionalSaved: false })}
+                options={draft.stationIds.map((id) => ({ value: id, label: id }))} /></Field>
+              <Field label="Easting" unit="m"><NumberInput value={anchor.approxE} step={0.001} onChange={(value) => patchAnchor({ approxE: value })} /></Field>
+              <Field label="Northing" unit="m"><NumberInput value={anchor.approxN} step={0.001} onChange={(value) => patchAnchor({ approxN: value })} /></Field>
+              <Field label="Height" unit="m"><NumberInput value={anchor.approxH} step={0.001} onChange={(value) => patchAnchor({ approxH: value })} /></Field>
+              <Field label="Orientation" unit="deg"><NumberInput value={draft.initAnchorOrientationDeg} step={0.0001}
+                onChange={(value) => set({ initAnchorOrientationDeg: value, provisionalSaved: false })} /></Field>
+            </div>
+          </div>
+        )}
       </Card>
 
       {computed && (
         <>
           <Card title="Station orientations (from references)">
             <TableWrap maxH="max-h-44">
-              <thead><tr><th>Station</th><th>Orientation</th><th>References used</th><th>Spread</th><th>Problems</th></tr></thead>
+              <thead><tr><th>Station</th><th>Source</th><th>Coordinates</th><th>Orientation</th><th>Control points</th><th>Spread</th><th>Problems</th></tr></thead>
               <tbody>
                 {draft.orientations.map((o) => (
                   <tr key={o.stationId}>
                     <td className="font-medium">{o.stationId}</td>
+                    <td><Badge tone={o.source === 'network-resection' ? 'Ready' : o.source === 'fixed-anchor' ? 'Provisional' : 'Success'}>{o.source ?? 'unresolved'}</Badge></td>
+                    <td className="text-2xs">{o.estimatedE !== undefined ? `${o.estimatedE.toFixed(3)} / ${o.estimatedN?.toFixed(3)} / ${o.estimatedH?.toFixed(3)}` : '-'}</td>
                     <td>{o.orientationRad !== undefined ? `${(o.orientationRad * 180 / Math.PI).toFixed(5)} deg` : '-'}</td>
                     <td>{o.nReferencesUsed} ({o.referencesUsed.join(', ')})</td>
                     <td>{fmtArcSec(o.spreadRad)}″</td>
@@ -200,15 +245,16 @@ export function StepInitial({ draft, set }: { draft: WizardDraft; set: (p: Parti
 export function StepAdjustment({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraft>) => void }) {
   const a = draft.adjustment;
   const patch = (p: Partial<AdjustmentTemplate>) => set({ adjustment: { ...a, ...p } });
-  const [expertOpen, setExpertOpen] = useState(draft.mode === 'expert');
+  const [expertOpen, setExpertOpen] = useState(false);
   const [search, setSearch] = useState('');
 
   const show = (label: string) => !search || label.toLowerCase().includes(search.toLowerCase());
 
   return (
     <div className="space-y-4">
-      <Card title="Step 7 - Adjustment Configuration (Standard)">
-        <div className="grid grid-cols-4 gap-4">
+      <Card title="Step 7 - Adjustment configuration">
+        <Callout tone="info">The template provides production-ready defaults. Review the quality thresholds below, then open Advanced options only when the site requires a specific weighting model.</Callout>
+        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           {show('dimension') && <Field label="Dimension"><Select value={a.dimension} onChange={(v) => patch({ dimension: v as '2D' | '3D' })}
             options={[{ value: '3D', label: '3D' }, { value: '2D', label: '2D (horizontal only)' }]} /></Field>}
           {show('linear units') && <Field label="Linear units"><TextInput value="metres" disabled /></Field>}
@@ -235,15 +281,15 @@ export function StepAdjustment({ draft, set }: { draft: WizardDraft; set: (p: Pa
         </div>
       </Card>
 
-      <Card title="Expert mode"
+      <Card title="Advanced options"
         actions={
           <div className="flex items-center gap-2">
             <TextInput placeholder="search parameter..." value={search} onChange={(e) => setSearch(e.target.value)} />
             <Button size="xs" onClick={() => setExpertOpen(!expertOpen)}>{expertOpen ? 'Collapse' : 'Expand'}</Button>
           </div>
         }>
-        {!expertOpen ? <p className="text-xs text-slate-400">Expert parameters are collapsed. Values inherited from the adjustment template.</p> : (
-          <div className="grid grid-cols-4 gap-4">
+        {!expertOpen ? <p className="text-xs text-slate-500">Specialised weighting, centering, datum and auto-correction parameters are collapsed. Their current values come from the selected template.</p> : (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             {show('distance weighting') && <Field label="Distance weighting" hint="How constant and ppm parts combine" inherited="quadratic">
               <Select value={a.distanceWeighting} onChange={(v) => patch({ distanceWeighting: v as 'additive' | 'quadratic' })}
                 options={[{ value: 'quadratic', label: 'Quadratic sqrt(c² + ppm²)' }, { value: 'additive', label: 'Additive c + ppm' }]} /></Field>}

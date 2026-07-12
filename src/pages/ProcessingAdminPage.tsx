@@ -9,6 +9,7 @@ import { fmtDateTime, fmtM, fmtMm, fmtNum } from '../lib/format';
 import type { AdjustmentTemplate, ConfigurationVersion } from '../types/domain';
 import { repository } from '../data/repository';
 import { PointIdentityPanel } from '../components/PointIdentityPanel';
+import { intervalOverlaps, planTimelineActivation } from '../store/configTimeline';
 
 const TAB_IDS = ['Overview', 'Configurations', 'Stations & Instruments', 'Targets & Prisms',
   'Point Identity', 'Reference Sets', 'Initial Coordinates', 'Adjustment Settings',
@@ -127,6 +128,10 @@ function ConfigurationsTab({ processingId }: { processingId: string }) {
     .sort((a, b) => a.versionNumber - b.versionNumber);
   const [compareA, setCompareA] = useState('');
   const [compareB, setCompareB] = useState('');
+  const timelineOverlaps = configs.flatMap((config, index) => configs.slice(index + 1)
+    .filter((other) => config.status !== 'draft' && other.status !== 'draft'
+      && intervalOverlaps(config.validFrom, config.validTo, other.validFrom, other.validTo))
+    .map((other) => `${config.label} ↔ ${other.label}`));
   const diff = useMemo(() => {
     const a = configs.find((c) => c.id === compareA);
     const b = configs.find((c) => c.id === compareB);
@@ -137,13 +142,17 @@ function ConfigurationsTab({ processingId }: { processingId: string }) {
   return (
     <div className="space-y-4">
       <Card title="Version timeline">
+        {timelineOverlaps.length > 0 && (
+          <Callout tone="error">Timeline blocked by overlapping validity periods: {timelineOverlaps.join(' · ')}</Callout>
+        )}
         <TableWrap>
           <thead>
             <tr><th>Version</th><th>Validity</th><th>Status</th><th>Main changes</th><th>Used by runs</th><th>Origin</th><th>Actions</th></tr>
           </thead>
           <tbody>
-            {configs.map((c) => (
-              <tr key={c.id}>
+            {configs.map((c) => {
+              const activation = planTimelineActivation(configs, { ...c, status: 'active' });
+              return <tr key={c.id}>
                 <td className="font-medium">{c.label}</td>
                 <td>{c.validFrom.slice(0, 10)} → {c.validTo ? c.validTo.slice(0, 10) : 'open'}</td>
                 <td><Badge tone={c.status}>{c.status}</Badge></td>
@@ -155,7 +164,8 @@ function ConfigurationsTab({ processingId }: { processingId: string }) {
                 <td>
                   <div className="flex gap-1">
                     {c.status !== 'active' && c.status !== 'archived' && (
-                      <Button size="xs" onClick={() => actions.setConfigStatus(c.id, 'active')}>Activate</Button>
+                      <Button size="xs" disabled={!activation.ok} title={activation.reason}
+                        onClick={() => actions.setConfigStatus(c.id, 'active')}>Activate</Button>
                     )}
                     {c.status === 'active' && (
                       <Button size="xs" onClick={() => actions.setConfigStatus(c.id, 'inactive')}>Deactivate</Button>
@@ -173,8 +183,8 @@ function ConfigurationsTab({ processingId }: { processingId: string }) {
                     }}>Duplicate</Button>
                   </div>
                 </td>
-              </tr>
-            ))}
+              </tr>;
+            })}
           </tbody>
         </TableWrap>
         <p className="mt-2 text-2xs text-slate-500">
@@ -287,7 +297,8 @@ function TargetsTab({ config }: { config: ConfigurationVersion }) {
         </thead>
         <tbody>
           {config.targets.map((t) => {
-            const setup = config.prismSetups.find((s) => s.targetKey === t.rawName);
+            const setup = config.prismSetups.find((s) =>
+              s.targetKey === t.rawName && t.stationIds.includes(s.stationId));
             const prism = prisms.find((p) => p.id === t.prismProfileId);
             return (
               <tr key={t.id}>

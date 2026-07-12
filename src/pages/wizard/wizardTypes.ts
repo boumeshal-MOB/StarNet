@@ -40,6 +40,9 @@ export interface WizardDraft {
   initFailures: { targetId: string; reason: string }[];
   initWindowFrom: string;
   initWindowTo: string;
+  initMode: 'known-references' | 'local-anchor';
+  initAnchorStationId: string;
+  initAnchorOrientationDeg: number;
   provisionalSaved: boolean;
   // 7/8/9
   adjustment: AdjustmentTemplate;
@@ -71,6 +74,9 @@ export function defaultDraft(): WizardDraft {
     initFailures: [],
     initWindowFrom: new Date(FIXTURE_START).toISOString().slice(0, 16),
     initWindowTo: new Date(FIXTURE_START + 2 * 3600000).toISOString().slice(0, 16),
+    initMode: 'known-references',
+    initAnchorStationId: '',
+    initAnchorOrientationDeg: 0,
     provisionalSaved: false,
     adjustment: { ...DEFAULT_ADJUSTMENT },
     runPolicy: { ...DEFAULT_RUN },

@@ -15,41 +15,50 @@ import { DevDataPage } from './pages/DevDataPage';
 import { cls } from './components/ui';
 
 const NAV = [
-  { to: '/', label: 'Processings', end: true },
-  { to: '/create', label: 'Create processing' },
-  { to: '/administration', label: 'Administration' },
-  { to: '/analysis', label: 'Analysis Lab' },
-  { to: '/templates', label: 'Templates' },
-  { to: '/audit', label: 'Audit log' },
+  { to: '/', label: 'Processings', icon: 'P', end: true },
+  { to: '/create', label: 'Create processing', icon: '+' },
+  { to: '/administration', label: 'Administration', icon: 'A' },
+  { to: '/analysis', label: 'Analysis Lab', icon: '∿' },
+  { to: '/templates', label: 'Templates', icon: 'T' },
+  { to: '/audit', label: 'Audit log', icon: 'L' },
 ];
 
 export default function App() {
   const { state } = useApp();
   return (
-    <div className="flex min-h-screen">
-      <aside className="fixed inset-y-0 z-30 flex w-52 flex-col border-r border-slate-200 bg-white">
-        <div className="border-b border-slate-100 px-4 py-4">
-          <div className="text-sm font-bold text-brand-700">BlueTrust Monitoring</div>
-          <div className="text-2xs text-slate-400">Topographic Adjustment Processing</div>
+    <div className="flex min-h-screen bg-slate-50">
+      <aside className="fixed inset-y-0 z-30 flex w-60 flex-col bg-slate-950 text-white shadow-xl">
+        <div className="border-b border-white/10 px-5 py-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-500 font-bold text-white shadow-lg shadow-brand-950/30">B</div>
+            <div>
+              <div className="text-sm font-bold tracking-tight">BlueTrust Monitoring</div>
+              <div className="text-2xs text-slate-400">Topographic adjustment</div>
+            </div>
+          </div>
         </div>
-        <nav className="flex-1 space-y-0.5 p-2">
+        <nav className="flex-1 space-y-1 p-3">
+          <div className="px-3 pb-2 pt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">Workspace</div>
           {NAV.map((n) => (
             <NavLink key={n.to} to={n.to} end={n.end}
               className={({ isActive }) => cls(
-                'block rounded-md px-3 py-2 text-xs font-medium',
-                isActive ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-50',
+                'flex items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-medium transition-colors',
+                isActive ? 'bg-brand-500 text-white shadow-sm' : 'text-slate-300 hover:bg-white/5 hover:text-white',
               )}>
+              <span className="flex h-6 w-6 items-center justify-center rounded-md bg-white/10 text-2xs font-bold">{n.icon}</span>
               {n.label}
             </NavLink>
           ))}
         </nav>
-        <div className="space-y-1 border-t border-slate-100 p-3 text-2xs text-slate-400">
-          <NavLink to="/architecture" className="block hover:text-brand-600">Target BTM architecture</NavLink>
-          <div>Signed in as <span className="font-medium text-slate-500">{state.user}</span></div>
-          <div className="text-slate-300">Mockup - local engine, IndexedDB persistence</div>
+        <div className="space-y-2 border-t border-white/10 p-4 text-2xs text-slate-400">
+          <NavLink to="/architecture" className="block rounded-md px-2 py-1.5 hover:bg-white/5 hover:text-white">Target BTM architecture</NavLink>
+          <div className="rounded-lg bg-white/5 p-3">
+            <div>Signed in as <span className="font-medium text-slate-200">{state.user}</span></div>
+            <div className="mt-1 text-slate-500">Prototype · local engine</div>
+          </div>
         </div>
       </aside>
-      <main className="ml-52 flex-1 p-6">
+      <main className="ml-60 min-w-0 flex-1 p-7 xl:p-9">
         {state.busy && (
           <div className="fixed right-4 top-4 z-50 rounded-md bg-slate-900/90 px-4 py-2 text-xs text-white shadow-lg">
             <span className="mr-2 inline-block h-2 w-2 animate-ping rounded-full bg-emerald-400" />

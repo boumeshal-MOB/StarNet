@@ -25,6 +25,9 @@ import {
   buildArtifacts, buildOutputValues, buildRunnerInput, deriveStatus,
   findReferenceSet, listSlots, selectCycles, slotMs,
 } from './runExecution';
+import {
+  planTimelineActivation, timelineSlots, uniqueConfigForSlot,
+} from './configTimeline';
 import { DEMO_USER, nextId, seedDemo } from './seed';
 
 export interface AppState {
@@ -317,12 +320,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [update]);
 
   const configForSlot = useCallback((processingId: string, slot: number): ConfigurationVersion | undefined => {
-    const s = stateRef.current;
-    const slotIso = new Date(slot).toISOString();
-    const versions = s.configVersions
-      .filter((c) => c.processingId === processingId && c.status !== 'draft' && c.status !== 'archived')
-      .sort((a, b) => b.versionNumber - a.versionNumber);
-    return versions.find((c) => c.validFrom <= slotIso && (!c.validTo || slotIso < c.validTo));
+    return uniqueConfigForSlot(stateRef.current.configVersions, processingId, slot);
   }, []);
 
   const executeRun = useCallback<AppActions['executeRun']>(async (processingId, opts) => {
@@ -376,7 +374,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const s = stateRef.current;
     const existing = s.results.filter((r) => r.processingId === processingId && r.outputSlot === slotIso);
     const config = configForSlot(processingId, new Date(slotIso).getTime());
-    if (config && existing.length >= config.runPolicy.maxRecalcPerSlot) {
+    if (!config) {
+      logAudit('run', 'catch-up-blocked', `No unique configuration for ${slotIso}`, processingId);
+      return null;
+    }
+    const policy = config.runPolicy;
+    const environmental = /environment|temperature|pressure|t\/p/i.test(reason);
+    if (!policy.catchUpEnabled
+        || (environmental && !policy.catchUpOnLateEnvironmental)
+        || (!environmental && !policy.catchUpOnLateObservation)) {
+      logAudit('run', 'catch-up-blocked', `Catch-up policy does not allow ${environmental ? 'late environmental data' : 'late observations'}`, processingId);
+      return null;
+    }
+    const stationIds = new Set(config.stations.map((station) => station.id));
+    const availableEpochs = environmental
+      ? repository.environmental().filter((item) => stationIds.has(item.stationId)).map((item) => Date.parse(item.epoch))
+      : repository.observations().filter((item) => stationIds.has(item.stationId)).map((item) => Date.parse(item.epoch));
+    const latestAvailable = Math.max(0, ...availableEpochs);
+    const ageH = (latestAvailable - Date.parse(slotIso)) / 3600000;
+    if (latestAvailable > 0 && ageH > policy.catchUpWindowH) {
+      logAudit('run', 'catch-up-blocked', `Slot is ${ageH.toFixed(1)} h behind the latest data (window ${policy.catchUpWindowH} h)`, processingId);
+      return null;
+    }
+    if (existing.length >= policy.maxRecalcPerSlot) {
       logAudit('run', 'catch-up-blocked', `Max recalculations per slot reached (${config.runPolicy.maxRecalcPerSlot})`, processingId);
       return null;
     }
@@ -389,10 +409,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const reprocess = useCallback<AppActions['reprocess']>(async (processingId, fromIso, toIso, opts) => {
     const s = stateRef.current;
-    const proc = s.processings.find((p) => p.id === processingId);
-    const interval = s.configVersions.find((c) => c.id === proc?.activeConfigurationVersionId)
-      ?.outputPolicy.outputIntervalMin ?? 30;
-    const slots = listSlots(interval, new Date(fromIso).getTime(), new Date(toIso).getTime());
+    const fromMs = new Date(fromIso).getTime();
+    const toMs = new Date(toIso).getTime();
+    const forced = opts.strategy === 'forced'
+      ? s.configVersions.find((c) => c.id === opts.forcedConfigId) : undefined;
+    const slots = forced
+      ? listSlots(forced.outputPolicy.outputIntervalMin, fromMs, toMs)
+      : timelineSlots(s.configVersions, processingId, fromMs, toMs);
     const runs: AdjustmentRun[] = [];
     logAudit('reprocess', opts.dryRun ? 'dry-run' : 'start',
       `Reprocess ${slots.length} slot(s) from ${fromIso} to ${toIso} (${opts.strategy})`, processingId);
@@ -590,28 +613,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       sourceAnalysisSessionId: meta.sourceAnalysisSessionId,
       sourceTrialId: meta.sourceTrialId,
     };
+    const activation = meta.activate ? planTimelineActivation(s.configVersions, created)
+      : { ok: true, versions: s.configVersions };
+    if (meta.activate && !activation.ok) {
+      created.status = 'draft';
+    }
     update((x) => ({
       ...x,
-      configVersions: [
-        ...x.configVersions.map((c) => {
-          // close the previous open-ended active version to avoid overlaps
-          if (meta.activate && c.processingId === processingId && c.status === 'active'
-              && (!c.validTo || c.validTo > meta.validFrom)) {
-            return { ...c, validTo: meta.validFrom, status: 'inactive' as const };
-          }
-          return c;
-        }),
-        created,
-      ],
+      configVersions: [...(activation.ok ? planTimelineActivation(x.configVersions, created).versions : x.configVersions), created],
       processings: x.processings.map((p) => p.id === processingId
         ? {
           ...p,
           configurationVersionIds: [...p.configurationVersionIds, created.id],
-          activeConfigurationVersionId: meta.activate ? created.id : p.activeConfigurationVersionId,
+          activeConfigurationVersionId: meta.activate && activation.ok ? created.id : p.activeConfigurationVersionId,
         }
         : p),
     }));
-    logAudit('configuration', 'create-version', `${created.label} created (valid from ${meta.validFrom})`, processingId, created.id);
+    logAudit('configuration', 'create-version', activation.ok
+      ? `${created.label} created (valid from ${meta.validFrom})`
+      : `${created.label} created as draft: ${activation.reason}`, processingId, created.id);
     return created;
   }, [logAudit, update]);
 
@@ -712,12 +732,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const c = s.configVersions.find((x) => x.id === configId);
       if (!c) return;
       if (c.usedByRun && (status === 'draft')) return; // used versions stay immutable
-      update((x) => ({
-        ...x,
-        configVersions: x.configVersions.map((v) => v.id === configId ? { ...v, status } : v),
-        processings: x.processings.map((p) => p.id === c.processingId && status === 'active'
-          ? { ...p, activeConfigurationVersionId: configId } : p),
-      }));
+      const candidate = { ...c, status };
+      const activation = status === 'active'
+        ? planTimelineActivation(s.configVersions, candidate)
+        : { ok: true, versions: s.configVersions };
+      if (!activation.ok) {
+        logAudit('configuration', 'activation-blocked', activation.reason ?? 'Timeline overlap', c.processingId, configId);
+        return;
+      }
+      update((x) => {
+        const planned = status === 'active'
+          ? planTimelineActivation(x.configVersions, candidate).versions : x.configVersions;
+        return {
+          ...x,
+          configVersions: planned.map((v) => v.id === configId ? { ...v, status } : v),
+          processings: x.processings.map((p) => p.id === c.processingId && status === 'active'
+            ? { ...p, activeConfigurationVersionId: configId } : p),
+        };
+      });
       logAudit('configuration', status, `Configuration ${c.label} -> ${status}`, c.processingId, configId);
     },
     addReferenceSet: (set) => {

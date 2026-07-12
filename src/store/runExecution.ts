@@ -195,8 +195,6 @@ export function buildOutputValues(
   const values: OutputResultVersion['values'] = {};
   const wanted = new Set<OutputVariableKey>(config.outputPolicy.variables);
   for (const c of attempt.coordinates) {
-    const t = config.targets.find((x) => x.adjustmentName === c.targetId);
-    if (!t || !t.publishOutput) continue;
     const v: Partial<Record<OutputVariableKey, number | string>> = {};
     const put = (k: OutputVariableKey, val: number | string | undefined) => {
       if (val !== undefined && wanted.has(k)) v[k] = val;
@@ -216,7 +214,17 @@ export function buildOutputValues(
     put('sigmaH', round6(c.sigmaH));
     put('qualityStatus', run.status);
     put('provisionalStatus', run.provisional ? 'provisional' : 'final');
-    values[t.outputName] = v;
+
+    // Coordinates are keyed by the resolved physical-point engine id. Fan the
+    // single adjusted value out to every publishable BTM prism registration
+    // linked to that physical point in this immutable configuration snapshot.
+    const pointIds = new Set(config.physicalPoints
+      .filter((point) => point.engineName === c.targetId)
+      .map((point) => point.id));
+    const targets = pointIds.size > 0
+      ? config.targets.filter((target) => pointIds.has(target.physicalPointId) && target.publishOutput)
+      : config.targets.filter((target) => target.adjustmentName === c.targetId && target.publishOutput);
+    for (const target of targets) values[target.outputName] = { ...v };
   }
   return values;
 }

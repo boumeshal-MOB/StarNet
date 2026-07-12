@@ -13,6 +13,11 @@ import type {
   ResolvedPointMapping, TargetMapping,
 } from '../types/domain';
 
+/** Stable identity of one prism registration in the raw BTM observations. */
+export function targetSourceKey(stationId: string, rawName: string): string {
+  return `${stationId}\u0000${rawName}`;
+}
+
 /** engine name (Star*Net id) for a target mapping, resolved via its physical point */
 export function resolveEngineName(
   mapping: Pick<TargetMapping, 'adjustmentName' | 'physicalPointId'>,
@@ -108,6 +113,52 @@ export interface MappingIssue {
 
 export function validatePointMapping(config: ConfigurationVersion): MappingIssue[] {
   const issues: MappingIssue[] = [];
+  const pointById = new Map(config.physicalPoints.map((p) => [p.id, p]));
+  const targetByPrism = new Map(config.targets.map((t) => [t.btmPrismId, t]));
+
+  // A raw target name is only unique inside its station. The composite source
+  // identity must itself be unique in a configuration version.
+  const sourceKeys = new Map<string, TargetMapping[]>();
+  for (const target of config.targets) {
+    if (target.stationIds.length !== 1) {
+      issues.push({ level: 'blocking', message: `BTM prism ${target.btmPrismId} must belong to exactly one station` });
+      continue;
+    }
+    const key = targetSourceKey(target.stationIds[0], target.rawName);
+    sourceKeys.set(key, [...(sourceKeys.get(key) ?? []), target]);
+  }
+  for (const targets of sourceKeys.values()) {
+    if (targets.length > 1) {
+      const t = targets[0];
+      issues.push({ level: 'blocking',
+        message: `Duplicate source mapping for ${t.stationIds[0]} / ${t.rawName}` });
+    }
+  }
+
+  // Target -> point and point -> target links must be fully reciprocal. A
+  // broken link is never hidden by the adjustment-name fallback.
+  for (const target of config.targets) {
+    const point = pointById.get(target.physicalPointId);
+    if (!point) {
+      issues.push({ level: 'blocking',
+        message: `${target.stationIds[0] ?? 'Unknown station'} / ${target.rawName} references a missing physical point` });
+    } else if (!point.btmPrismIds.includes(target.btmPrismId)) {
+      issues.push({ level: 'blocking', engineName: point.engineName,
+        message: `Physical point ${point.label} does not contain its mapped BTM prism ${target.btmPrismId}` });
+    }
+  }
+  for (const point of config.physicalPoints) {
+    for (const prismId of point.btmPrismIds) {
+      const target = targetByPrism.get(prismId);
+      if (!target) {
+        issues.push({ level: 'blocking', engineName: point.engineName,
+          message: `Physical point ${point.label} contains unknown BTM prism ${prismId}` });
+      } else if (target.physicalPointId !== point.id) {
+        issues.push({ level: 'blocking', engineName: point.engineName,
+          message: `BTM prism ${prismId} points to another physical point` });
+      }
+    }
+  }
 
   // engine-name collisions: two different physical points sharing an engine name
   const engineToPoints = new Map<string, Set<string>>();
@@ -138,6 +189,25 @@ export function validatePointMapping(config: ConfigurationVersion): MappingIssue
   for (const [bid, ids] of prismToPoints) {
     if (ids.size > 1) {
       issues.push({ level: 'blocking', message: `BTM prism ${bid} is linked to ${ids.size} physical points` });
+    }
+  }
+
+  // Output names are the storage keys of a result. Reusing one for two
+  // different physical points would silently overwrite one adjusted value.
+  const outputToPoints = new Map<string, Set<string>>();
+  for (const target of config.targets.filter((t) => t.publishOutput)) {
+    if (!target.outputName.trim()) {
+      issues.push({ level: 'blocking', message: `${target.stationIds[0]} / ${target.rawName} has no BTM output name` });
+      continue;
+    }
+    const set = outputToPoints.get(target.outputName) ?? new Set<string>();
+    set.add(target.physicalPointId);
+    outputToPoints.set(target.outputName, set);
+  }
+  for (const [outputName, pointIds] of outputToPoints) {
+    if (pointIds.size > 1) {
+      issues.push({ level: 'blocking',
+        message: `BTM output name "${outputName}" is assigned to ${pointIds.size} different physical points` });
     }
   }
 
@@ -246,6 +316,21 @@ export function linkAsSamePoint(
   const selected = state.targets.filter((t) => targetIds.includes(t.id));
   if (selected.length < 2) return state;
   const selectedPrismIds = new Set(selected.map((t) => t.btmPrismId));
+  const outputNamesOutsideSelection = new Set(state.targets
+    .filter((t) => !targetIds.includes(t.id))
+    .map((t) => t.outputName));
+  const resolvedOutputNames = new Map<string, string>();
+  for (const target of selected) {
+    let outputName = target.outputName;
+    if (outputNamesOutsideSelection.has(outputName)) {
+      const base = `${outputName}_${target.stationIds[0]}`;
+      outputName = base;
+      let suffix = 2;
+      while (outputNamesOutsideSelection.has(outputName)) outputName = `${base}_${suffix++}`;
+    }
+    resolvedOutputNames.set(target.id, outputName);
+    outputNamesOutsideSelection.add(outputName);
+  }
   // remove the moved prisms from their previous points (a prism must never
   // be linked to two physical points) and demote points left with one prism
   const cleaned = state.physicalPoints
@@ -259,7 +344,7 @@ export function linkAsSamePoint(
     label: names.length === 1 ? names[0] : names.join('='),
     engineName: uniqueEngineName(names[0], taken),
     role: selected[0].role,
-    outputName: selected[0].outputName,
+    outputName: resolvedOutputNames.get(selected[0].id),
     btmPrismIds: selected.map((t) => t.btmPrismId),
     state: 'shared',
     source,
@@ -269,7 +354,9 @@ export function linkAsSamePoint(
     decidedAt: new Date().toISOString(),
   };
   return pruneOrphans({
-    targets: state.targets.map((t) => targetIds.includes(t.id) ? { ...t, physicalPointId: pp.id } : t),
+    targets: state.targets.map((t) => targetIds.includes(t.id)
+      ? { ...t, physicalPointId: pp.id, outputName: resolvedOutputNames.get(t.id) ?? t.outputName }
+      : t),
     physicalPoints: [...cleaned, pp],
   });
 }
@@ -279,12 +366,18 @@ export function unlinkPrism(state: MappingState, targetId: string, user: string,
   const t = state.targets.find((x) => x.id === targetId);
   if (!t) return state;
   const taken = new Set(state.physicalPoints.map((p) => p.engineName));
+  const outputTakenByOtherPoints = new Set(state.targets
+    .filter((x) => x.id !== targetId && x.physicalPointId !== t.physicalPointId)
+    .map((x) => x.outputName));
+  let outputName = t.outputName;
+  let outputSuffix = 2;
+  while (outputTakenByOtherPoints.has(outputName)) outputName = `${t.outputName}_${outputSuffix++}`;
   const pp: PhysicalPoint = {
     id: `pp-${Date.now()}-${Math.floor(Math.random() * 1e6).toString(36)}`,
     label: t.adjustmentName,
     engineName: uniqueEngineName(t.adjustmentName, taken),
     role: t.role,
-    outputName: t.outputName,
+    outputName,
     btmPrismIds: [t.btmPrismId],
     state: 'resolved',
     source: 'manual',
@@ -300,7 +393,7 @@ export function unlinkPrism(state: MappingState, targetId: string, user: string,
     return { ...p, btmPrismIds: rest, state: rest.length <= 1 ? 'resolved' as const : p.state };
   });
   return pruneOrphans({
-    targets: state.targets.map((x) => x.id === targetId ? { ...x, physicalPointId: pp.id } : x),
+    targets: state.targets.map((x) => x.id === targetId ? { ...x, physicalPointId: pp.id, outputName } : x),
     physicalPoints: [...points, pp],
   });
 }
