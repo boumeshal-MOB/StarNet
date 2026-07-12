@@ -7,7 +7,7 @@ import type { StationOrientation } from '../../engine/initial';
 import { FIXTURE_START } from '../../data/fixture';
 
 export const WIZARD_STEPS = [
-  'General', 'Data & Network', 'Instruments', 'Targets & Prisms', 'References',
+  'General', 'Stations', 'Instruments', 'Targets & Prisms', 'References',
   'Initial Coordinates', 'Adjustment', 'Run', 'Output', 'Review & Create',
 ];
 

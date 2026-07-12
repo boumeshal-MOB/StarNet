@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../store/AppStore';
 import {
-  Badge, Button, Callout, Card, Field, KV, NumberInput, Select, Stepper,
+  Badge, Button, Callout, Card, Field, NumberInput, Select, Stepper,
   TableWrap, TextInput, Toggle,
 } from '../../components/ui';
 import { repository } from '../../data/repository';
@@ -174,13 +174,20 @@ function Step1({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraf
           <TextInput value={draft.name} onChange={(e) => set({ name: e.target.value })}
             placeholder="e.g. NTE ATS34 - Network adjustment" />
         </Field>
-        <Field label="Project">
-          <Select value={draft.project || proj.project} onChange={(v) => set({ project: v })}
-            options={[{ value: proj.project, label: proj.project }]} />
-        </Field>
         <Field label="Site">
           <Select value={draft.site || proj.site} onChange={(v) => set({ site: v })}
             options={[{ value: proj.site, label: proj.site }]} />
+        </Field>
+        <Field label="Adjustment type" hint="Choose whether the processing adjusts one station or a complete network.">
+          <Select value={draft.networkKind}
+            onChange={(v) => set({
+              networkKind: v as WizardDraft['networkKind'],
+              stationIds: v === 'single-station' ? draft.stationIds.slice(0, 1) : draft.stationIds,
+            })}
+            options={[
+              { value: 'single-station', label: 'Single station adjustment' },
+              { value: 'multi-station', label: 'Multi-station network adjustment' },
+            ]} />
         </Field>
         <Field label="Description">
           <TextInput value={draft.description} onChange={(e) => set({ description: e.target.value })} />
@@ -194,13 +201,39 @@ function Step1({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraf
             label={draft.activeAfterCreation ? 'Yes - runs can trigger immediately' : 'No - created as inactive'} />
         </Field>
       </div>
+
+      <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold text-slate-800">BTM data overview</div>
+            <div className="text-2xs text-slate-500">Read-only information from the current project database.</div>
+          </div>
+          <Badge tone="Success">Metadata complete</Badge>
+        </div>
+        <div className="grid grid-cols-2 gap-x-6 gap-y-3 md:grid-cols-3 xl:grid-cols-6">
+          <CompactInfo label="Observation period" value={`${fmtDateTime(proj.coverage.from)} → ${fmtDateTime(proj.coverage.to)}`} wide />
+          <CompactInfo label="Last observation" value={fmtDateTime(proj.lastEpoch)} />
+          <CompactInfo label="Raw observations" value={proj.observationCount.toLocaleString()} />
+          <CompactInfo label="Targets observed" value={String(proj.targetCount)} />
+          <CompactInfo label="Available variables" value={proj.variables.join(', ')} wide />
+          <CompactInfo label="Metadata quality" value="Lookup + header block available" wide />
+        </div>
+      </div>
     </Card>
+  );
+}
+
+function CompactInfo({ label, value, wide }: { label: string; value: string; wide?: boolean }) {
+  return (
+    <div className={wide ? 'col-span-2' : ''}>
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</div>
+      <div className="mt-0.5 truncate text-xs font-medium text-slate-700" title={value}>{value}</div>
+    </div>
   );
 }
 
 // =============================================================== Step 2 ====
 function Step2({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraft>) => void }) {
-  const proj = repository.project();
   const stations = repository.stationSummaries();
   const toggleStation = (id: string) => {
     const has = draft.stationIds.includes(id);
@@ -209,38 +242,11 @@ function Step2({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraf
     set({ stationIds: next });
   };
   return (
-    <div className="space-y-4">
-      <Card title="Step 2 - Data Source and Network">
-        <Callout tone="info">
-          Observations are already stored in the BTM database. Select the project data
-          and the stations to include - no file, sheet or column mapping is involved.
-        </Callout>
-        <div className="mt-4 grid grid-cols-2 gap-6">
-          <KV items={[
-            ['Project', proj.project],
-            ['Site', proj.site],
-            ['Network', proj.network],
-            ['Stations available in BTM', String(stations.length)],
-            ['Observation period', `${fmtDateTime(proj.coverage.from)} → ${fmtDateTime(proj.coverage.to)}`],
-            ['Last observation', fmtDateTime(proj.lastEpoch)],
-            ['Raw observations', String(proj.observationCount)],
-            ['Targets observed', String(proj.targetCount)],
-            ['Available variables', proj.variables.join(', ')],
-            ['Metadata quality', 'Complete (lookup + header block present)'],
-          ]} />
-          <div>
-            <Field label="Network type">
-              <Select value={draft.networkKind}
-                onChange={(v) => set({ networkKind: v as WizardDraft['networkKind'], stationIds: v === 'single-station' ? draft.stationIds.slice(0, 1) : draft.stationIds })}
-                options={[
-                  { value: 'single-station', label: 'Single station' },
-                  { value: 'multi-station', label: 'Multi-station network' },
-                ]} />
-            </Field>
-          </div>
-        </div>
-      </Card>
-      <Card title="Stations available in BTM">
+    <Card title="Step 2 - Stations available in BTM"
+      actions={<Badge tone={draft.stationIds.length > 0 ? 'Ready' : 'Draft'}>{draft.stationIds.length} selected / {stations.length}</Badge>}>
+        <p className="mb-4 text-xs text-slate-500">
+          Select {draft.networkKind === 'single-station' ? 'the station' : 'the stations'} to include in this adjustment.
+        </p>
         <TableWrap>
           <thead>
             <tr><th></th><th>Station</th><th>Last observation</th><th>Targets</th><th>Estimated cycle</th><th>Environmental data</th><th>Readiness</th></tr>
@@ -259,8 +265,7 @@ function Step2({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraf
             ))}
           </tbody>
         </TableWrap>
-      </Card>
-    </div>
+    </Card>
   );
 }
 
