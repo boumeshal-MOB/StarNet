@@ -5,7 +5,7 @@
 // ---------------------------------------------------------------------------
 
 import type {
-  AuditEvent, ConfigurationVersion, Processing, ProvisionalCoordinate,
+  AuditEvent, ConfigurationVersion, PhysicalPoint, Processing, ProvisionalCoordinate,
   ReferenceSet, Station, StationPrismSetup, TargetMapping,
 } from '../types/domain';
 import { repository } from '../data/repository';
@@ -13,6 +13,7 @@ import { FIXTURE_START, REF01_V2_FROM } from '../data/fixture';
 import { DEFAULT_ADJUSTMENT, DEFAULT_OUTPUT, DEFAULT_RUN } from '../data/templates';
 import { computeInitialCoordinates } from '../engine/initial';
 import { correctDistance, lookupEnvironment } from '../engine/corrections';
+import { resolveEngineName } from '../engine/pointIdentity';
 import type { CorrectionTrace } from '../types/domain';
 
 export const DEMO_USER = 'm.boumeshal';
@@ -35,9 +36,10 @@ export function buildStations(stationIds: string[], opts?: Partial<Station>): St
       validFrom: new Date(FIXTURE_START).toISOString(),
       distanceState: 'raw',
       constantAppliedByStationM: 0,
-      atmosphericMode: 'automatic',
-      temperatureVariable: `${id}.Temperature`,
-      pressureVariable: `${id}.Pressure`,
+      // stations without T/P series in BTM cannot use automatic correction
+      atmosphericMode: s.environmentalData ? 'automatic' : 'none',
+      temperatureVariable: s.environmentalData ? `${id}.Temperature` : undefined,
+      pressureVariable: s.environmentalData ? `${id}.Pressure` : undefined,
       envToleranceMin: 15,
       defaultTemperatureC: 15,
       defaultPressureHPa: 1015,
@@ -52,13 +54,25 @@ export function buildStations(stationIds: string[], opts?: Partial<Station>): St
   });
 }
 
-export function buildTargetsAndSetups(stationIds: string[]): {
-  targets: TargetMapping[]; setups: StationPrismSetup[];
+/**
+ * One TargetMapping per BTM prism registration (per lookup row / per station)
+ * plus the versioned Physical Point mapping. Default rule: every prism is its
+ * own distinct physical point. Prisms sharing an AdjustmentName in the BTM
+ * lookup were declared as one business point at import time -> they form a
+ * shared physical point (source 'import'), never merged by field name alone.
+ */
+export function buildTargetsAndSetups(stationIds: string[], referenceIds?: Set<string>): {
+  targets: TargetMapping[]; setups: StationPrismSetup[]; physicalPoints: PhysicalPoint[];
 } {
   const lookup = repository.lookup().filter((r) => stationIds.includes(r.RTS));
   const prisms = repository.prismProfiles();
-  const byAdjName = new Map<string, TargetMapping>();
   const setups: StationPrismSetup[] = [];
+  const targets: TargetMapping[] = [];
+  const groups = new Map<string, { rows: typeof lookup; mappings: TargetMapping[] }>();
+
+  const isRef = (adjName: string) =>
+    referenceIds ? referenceIds.has(adjName) : adjName.startsWith('REF');
+
   for (const row of lookup) {
     const prism = prisms.find((p) => Math.abs(p.effectiveConstantM - row.PrismConstant) < 1e-9);
     setups.push({
@@ -70,18 +84,15 @@ export function buildTargetsAndSetups(stationIds: string[]): {
       targetHeightM: row.TargetHeight,
       source: 'template',
     });
-    const existing = byAdjName.get(row.AdjustmentName);
-    if (existing) {
-      if (!existing.stationIds.includes(row.RTS)) existing.stationIds.push(row.RTS);
-      continue;
-    }
-    byAdjName.set(row.AdjustmentName, {
+    const mapping: TargetMapping = {
       id: nextId('target'),
       stationIds: [row.RTS],
+      btmPrismId: `PRISM-${row.RTS}-${row.TargetName}`,   // stable BTM registration id
       rawName: row.TargetName,
       adjustmentName: row.AdjustmentName,
       outputName: row.OutputName,
-      role: row.AdjustmentName.startsWith('REF') ? 'reference' : 'monitoring',
+      physicalPointId: '',                                 // resolved below
+      role: isRef(row.AdjustmentName) ? 'reference' : 'monitoring',
       prismProfileId: prism?.id ?? 'prism-std0',
       grade: row.PrismGrade,
       targetHeightM: row.TargetHeight,
@@ -92,30 +103,44 @@ export function buildTargetsAndSetups(stationIds: string[]): {
       reviewStatus: 'ok',
       initialCoordinateStatus: 'missing',
       nomenclatureIssues: [],
-    });
+    };
+    targets.push(mapping);
+    const g = groups.get(row.AdjustmentName) ?? { rows: [], mappings: [] };
+    g.rows.push(row);
+    g.mappings.push(mapping);
+    groups.set(row.AdjustmentName, g);
   }
-  // the lookup keys targets by raw name per station; the engine needs a
-  // rawName -> mapping for every station alias as well
-  const targets = [...byAdjName.values()];
-  return { targets, setups };
-}
 
-/** raw-name alias mappings so every station's field name resolves */
-export function expandTargetAliases(targets: TargetMapping[], stationIds: string[]): TargetMapping[] {
-  const lookup = repository.lookup().filter((r) => stationIds.includes(r.RTS));
-  const out: TargetMapping[] = [];
-  for (const row of lookup) {
-    const base = targets.find((t) => t.adjustmentName === row.AdjustmentName);
-    if (!base) continue;
-    out.push({ ...base, id: nextId('target'), rawName: row.TargetName, stationIds: [row.RTS] });
+  const physicalPoints: PhysicalPoint[] = [];
+  for (const [adjName, g] of groups) {
+    const stationsOf = [...new Set(g.mappings.map((m) => m.stationIds[0]))];
+    const shared = stationsOf.length > 1;
+    const pp: PhysicalPoint = {
+      id: nextId('pp'),
+      label: adjName,
+      engineName: adjName,
+      role: g.mappings[0].role,
+      outputName: g.rows[0].OutputName,
+      btmPrismIds: g.mappings.map((m) => m.btmPrismId),
+      state: shared ? 'shared' : 'resolved',
+      source: shared ? 'import' : 'default',
+      rationale: shared
+        ? `Business id "${adjName}" declared for ${stationsOf.join(' and ')} in the BTM lookup import`
+        : undefined,
+      decidedBy: shared ? 'import' : undefined,
+      decidedAt: shared ? new Date(FIXTURE_START).toISOString() : undefined,
+    };
+    physicalPoints.push(pp);
+    for (const m of g.mappings) m.physicalPointId = pp.id;
   }
-  return out;
+  return { targets, setups, physicalPoints };
 }
 
 export function computeProvisional(
   stations: Station[],
   targets: TargetMapping[],
   setups: StationPrismSetup[],
+  physicalPoints: PhysicalPoint[],
   referenceSet: ReferenceSet,
   windowFromMs: number,
   windowToMs: number,
@@ -125,16 +150,18 @@ export function computeProvisional(
   const instruments = Object.fromEntries(repository.instrumentProfiles().map((p) => [p.id, p]));
   const setupByKey = new Map(setups.map((s) => [`${s.stationId}|${s.targetKey}`, s]));
   const corrections = new Map<string, CorrectionTrace>();
+  // per (station, field name) -> engine name resolved via the physical point
   const nameMap = new Map<string, string>();
   const heights = new Map<string, number>();
   for (const t of targets) {
-    nameMap.set(t.rawName, t.adjustmentName);
-    heights.set(t.adjustmentName, t.targetHeightM);
+    const engineName = resolveEngineName(t, physicalPoints);
+    for (const sid of t.stationIds) nameMap.set(`${sid}|${t.rawName}`, engineName);
+    heights.set(engineName, t.targetHeightM);
   }
   for (const o of observations) {
     const st = stations.find((s) => s.id === o.stationId);
-    const adjName = nameMap.get(o.rawTargetName);
-    if (!st || !adjName) continue;
+    const engineName = nameMap.get(`${o.stationId}|${o.rawTargetName}`);
+    if (!st || !engineName) continue;
     const setup = setupByKey.get(`${o.stationId}|${o.rawTargetName}`);
     corrections.set(o.id, correctDistance({
       observation: o,
@@ -143,7 +170,7 @@ export function computeProvisional(
       instrument: instruments[st.instrumentProfileId],
       env: lookupEnvironment(st, o.epoch, env),
       datumScale: 1,
-      targetId: adjName,
+      targetId: engineName,
     }));
   }
   const result = computeInitialCoordinates({
@@ -176,17 +203,17 @@ export function seedDemo(): SeedResult {
 
   // ---------------- multi-station network processing --------------------
   const procId = 'proc-nte-ats34';
-  const refSets = repository.referenceSetsFromHeader(procId, DEMO_USER);
+  const refSets = repository.referenceSetsFromHeader(procId, DEMO_USER, (id) => id.startsWith('REF'));
   const stationIds = ['ATS34', 'ATS35', 'ATS36'];
   const stations = buildStations(stationIds);
-  const { targets, setups } = buildTargetsAndSetups(stationIds);
-  const aliasTargets = expandTargetAliases(targets, stationIds);
+  const { targets: aliasTargets, setups, physicalPoints } = buildTargetsAndSetups(stationIds);
 
   const initWindowFrom = FIXTURE_START;
   const initWindowTo = FIXTURE_START + 2 * 3600000;
-  const provisional = computeProvisional(stations, aliasTargets, setups, refSets[0], initWindowFrom, initWindowTo);
+  const provisional = computeProvisional(stations, aliasTargets, setups, physicalPoints, refSets[0], initWindowFrom, initWindowTo);
   for (const t of aliasTargets) {
-    if (provisional.some((p) => p.targetId === t.adjustmentName)) t.initialCoordinateStatus = 'computed';
+    const engineName = resolveEngineName(t, physicalPoints);
+    if (provisional.some((p) => p.targetId === engineName)) t.initialCoordinateStatus = 'computed';
   }
 
   const mkConfig = (
@@ -207,6 +234,7 @@ export function seedDemo(): SeedResult {
     stations: JSON.parse(JSON.stringify(stations)),
     prismSetups: JSON.parse(JSON.stringify(setups)),
     targets: JSON.parse(JSON.stringify(aliasTargets)),
+    physicalPoints: JSON.parse(JSON.stringify(physicalPoints)),
     referenceSetId: refSetId,
     provisionalCoordinates: JSON.parse(JSON.stringify(provisional)),
     adjustment: { ...DEFAULT_ADJUSTMENT },
@@ -257,17 +285,17 @@ export function seedDemo(): SeedResult {
 
   // ---------------- single-station processing (draft) --------------------
   const proc2Id = 'proc-ats34-single';
-  const refSets2 = repository.referenceSetsFromHeader(proc2Id, DEMO_USER)
+  const refSets2 = repository.referenceSetsFromHeader(proc2Id, DEMO_USER, (id) => id.startsWith('REF'))
     .map((s) => ({
       ...s,
       points: s.points.filter((p) => ['REF01', 'REF02', 'REF04', 'REF05'].includes(p.pointId)),
     }));
   const stations2 = buildStations(['ATS34']);
-  const { targets: t2, setups: s2 } = buildTargetsAndSetups(['ATS34']);
-  const alias2 = expandTargetAliases(t2, ['ATS34']);
-  const prov2 = computeProvisional(stations2, alias2, s2, refSets2[0], initWindowFrom, initWindowTo);
+  const { targets: alias2, setups: s2, physicalPoints: pp2 } = buildTargetsAndSetups(['ATS34']);
+  const prov2 = computeProvisional(stations2, alias2, s2, pp2, refSets2[0], initWindowFrom, initWindowTo);
   for (const t of alias2) {
-    if (prov2.some((p) => p.targetId === t.adjustmentName)) t.initialCoordinateStatus = 'computed';
+    const engineName = resolveEngineName(t, pp2);
+    if (prov2.some((p) => p.targetId === engineName)) t.initialCoordinateStatus = 'computed';
   }
   const v1b: ConfigurationVersion = {
     ...mkConfig(1, 'V1 - Single station', refSets2[0].id,
@@ -278,6 +306,7 @@ export function seedDemo(): SeedResult {
     stations: stations2,
     prismSetups: s2,
     targets: alias2,
+    physicalPoints: pp2,
     provisionalCoordinates: prov2,
     runPolicy: { ...DEFAULT_RUN, triggerMode: 'manual', requiredStationIds: ['ATS34'], optionalStationIds: [] },
   };
@@ -300,10 +329,74 @@ export function seedDemo(): SeedResult {
   };
   logAudit('processing', 'create', 'Single-station processing created (demo seed)', proc2Id);
 
-  return {
-    processings: [processing, processing2],
-    configVersions: [v1, v2, v1b],
-    referenceSets: [...refSets, ...refSets2],
-    audit,
-  };
+  // ---------------- REAL data processing (NTE_ATS34 workbook) -----------
+  const real = repository.realProject();
+  const processings: Processing[] = [processing, processing2];
+  const configVersions: ConfigurationVersion[] = [v1, v2, v1b];
+  const referenceSets: ReferenceSet[] = [...refSets, ...refSets2];
+
+  if (real) {
+    const proc3Id = 'proc-real-ats34';
+    const realPointIds = new Set(real.header.map((h) => h.PointId));
+    const refSets3 = repository.referenceSetsFromHeader(proc3Id, DEMO_USER, (id) => realPointIds.has(id));
+    const stations3 = buildStations([real.stationId], {
+      validFrom: refSets3[0]?.validFrom ?? new Date('2024-12-02T02:00:00Z').toISOString(),
+    });
+    const refIds3 = new Set(real.referenceIds);
+    const { targets: t3, setups: s3, physicalPoints: pp3 } = buildTargetsAndSetups([real.stationId], refIds3);
+    // first observation cycle of the real dataset as initialization window
+    const epochs = real.rawObservations.map((o) => new Date(o.epoch).getTime()).sort((a, b) => a - b);
+    const firstCycleFrom = epochs[0] - 60000;
+    const firstCycleTo = epochs[0] + 60 * 60000;
+    const prov3 = computeProvisional(stations3, t3, s3, pp3, refSets3[0], firstCycleFrom, firstCycleTo);
+    for (const t of t3) {
+      const engineName = resolveEngineName(t, pp3);
+      if (prov3.some((p) => p.targetId === engineName)) t.initialCoordinateStatus = 'computed';
+    }
+    const v1c: ConfigurationVersion = {
+      ...mkConfig(1, 'V1 - Imported from BTM', refSets3[0].id,
+        refSets3[0].validFrom, undefined, 'active',
+        'Real NTE_ATS34 dataset (March 2025): 9 tight references, loose station prior, free station height.'),
+      id: `${proc3Id}-v1`,
+      processingId: proc3Id,
+      stations: stations3,
+      prismSetups: s3,
+      targets: t3,
+      physicalPoints: pp3,
+      provisionalCoordinates: prov3,
+      runPolicy: {
+        ...DEFAULT_RUN,
+        triggerMode: 'event-driven',
+        syncToleranceMin: 30,
+        maxReusedAgeMin: 360,
+        requiredStationIds: [real.stationId],
+        optionalStationIds: [],
+      },
+      outputPolicy: { ...DEFAULT_OUTPUT, outputIntervalMin: 60, maxEpochToSlotDistanceMin: 30 },
+    };
+    const processing3: Processing = {
+      id: proc3Id,
+      name: 'NTE ATS34 - Real data (workbook)',
+      type: 'Topographic Adjustment',
+      project: real.project,
+      site: real.site,
+      network: real.network,
+      description: `Single-station resection + radiation on the real ATS34 dataset (${real.meta.observationCount} observations, March 2025).`,
+      mode: 'expert',
+      status: 'Ready',
+      active: true,
+      createdAt: now,
+      createdBy: DEMO_USER,
+      networkKind: 'single-station',
+      configurationVersionIds: [v1c.id],
+      activeConfigurationVersionId: v1c.id,
+    };
+    processings.push(processing3);
+    configVersions.push(v1c);
+    referenceSets.push(...refSets3);
+    logAudit('processing', 'create', `Real ATS34 processing created from workbook data (${real.meta.source})`, proc3Id);
+    logAudit('data', 'ingest', `${real.meta.observationCount} raw observations available in BTM for ${real.stationId}`, proc3Id);
+  }
+
+  return { processings, configVersions, referenceSets, audit };
 }

@@ -8,6 +8,7 @@ import {
 import { useApp } from '../../store/AppStore';
 import { nextId } from '../../store/seed';
 import { repository } from '../../data/repository';
+import { validatePointMapping } from '../../engine/pointIdentity';
 import type {
   ConfigurationVersion, OutputTemplate, OutputVariableKey, Processing, RunTemplate,
 } from '../../types/domain';
@@ -183,6 +184,14 @@ export function StepReview({ draft, set }: { draft: WizardDraft; set: (p: Partia
   const nomIssues = draft.targets.flatMap((t) => t.nomenclatureIssues);
   if (nomIssues.length) warnings.push(`${nomIssues.length} nomenclature issue(s) in target names`);
   if (draft.targets.some((t) => t.reviewStatus === 'to-review')) warnings.push('Some targets are still "To review" (excluded by default)');
+  // point-identity pre-run checks (blocking / confirm / suggestion / warning)
+  const mappingIssues = validatePointMapping({
+    stations: draft.stations, targets: draft.targets, physicalPoints: draft.physicalPoints,
+  } as never);
+  for (const i of mappingIssues) {
+    if (i.level === 'blocking') blockers.push(`Point mapping: ${i.message}`);
+    else warnings.push(`Point mapping (${i.level}): ${i.message}`);
+  }
 
   const buildEntities = (): { processing: Processing; config: ConfigurationVersion } => {
     const procId = nextId('proc');
@@ -203,6 +212,7 @@ export function StepReview({ draft, set }: { draft: WizardDraft; set: (p: Partia
       stations: draft.stations,
       prismSetups: draft.setups,
       targets: draft.targets,
+      physicalPoints: draft.physicalPoints,
       referenceSetId: selectedRefSet.id,
       provisionalCoordinates: draft.provisional,
       adjustment: draft.adjustment,

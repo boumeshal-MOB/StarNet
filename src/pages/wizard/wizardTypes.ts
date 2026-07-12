@@ -1,6 +1,6 @@
 import type {
-  AdjustmentTemplate, OutputTemplate, ProvisionalCoordinate, ReferenceSet,
-  RunTemplate, Station, StationPrismSetup, TargetMapping,
+  AdjustmentTemplate, OutputTemplate, PhysicalPoint, ProvisionalCoordinate,
+  ReferenceSet, RunTemplate, Station, StationPrismSetup, TargetMapping,
 } from '../../types/domain';
 import { DEFAULT_ADJUSTMENT, DEFAULT_OUTPUT, DEFAULT_RUN } from '../../data/templates';
 import type { StationOrientation } from '../../engine/initial';
@@ -27,9 +27,10 @@ export interface WizardDraft {
   stationIds: string[];
   // 3 - instruments
   stations: Station[];
-  // 4 - targets
+  // 4 - targets & point identity
   targets: TargetMapping[];
   setups: StationPrismSetup[];
+  physicalPoints: PhysicalPoint[];
   // 5 - references
   refSets: ReferenceSet[];
   selectedRefSetId: string;
@@ -62,6 +63,7 @@ export function defaultDraft(): WizardDraft {
     stations: [],
     targets: [],
     setups: [],
+    physicalPoints: [],
     refSets: [],
     selectedRefSetId: '',
     provisional: [],

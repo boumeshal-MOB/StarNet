@@ -8,6 +8,7 @@ import {
 import { repository } from '../../data/repository';
 import { fmtMm } from '../../lib/format';
 import type { ReferencePoint, TargetMapping } from '../../types/domain';
+import { PointIdentityPanel } from '../../components/PointIdentityPanel';
 
 // ============================================================ Step 4 =======
 export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraft>) => void }) {
@@ -46,27 +47,47 @@ export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Parti
       alert('No unmapped target detected in the observations.');
       return;
     }
+    // every new prism gets its own distinct physical point (unresolved)
+    const newTargets: TargetMapping[] = [];
+    const newPoints: typeof draft.physicalPoints = [];
+    newOnes.forEach((rawName, i) => {
+      const stationId = repository.observations()
+        .find((o) => o.rawTargetName === rawName && draft.stationIds.includes(o.stationId))?.stationId ?? '';
+      const adjustmentName = rawName.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 15);
+      const ppId = `pp-new-${Date.now()}-${i}`;
+      newPoints.push({
+        id: ppId,
+        label: adjustmentName,
+        engineName: adjustmentName,
+        role: 'auxiliary',
+        btmPrismIds: [`PRISM-${stationId}-${rawName}`],
+        state: 'unresolved',
+        source: 'default',
+        rationale: 'New target detected in the observations - identity not confirmed',
+      });
+      newTargets.push({
+        id: `new-${Date.now()}-${i}`,
+        stationIds: [stationId],
+        btmPrismId: `PRISM-${stationId}-${rawName}`,
+        rawName,
+        adjustmentName,
+        outputName: `NTE_ATS34_${rawName}`,
+        physicalPointId: ppId,
+        role: 'auxiliary',
+        prismProfileId: 'prism-std0',
+        targetHeightM: 0,
+        includeInAdjustment: false,       // never auto-included
+        publishOutput: false,
+        validFrom: new Date().toISOString(),
+        source: 'manual-override',
+        reviewStatus: 'to-review',
+        initialCoordinateStatus: 'to-review',
+        nomenclatureIssues: [],
+      });
+    });
     set({
-      targets: [
-        ...draft.targets,
-        ...newOnes.map((rawName, i) => ({
-          id: `new-${Date.now()}-${i}`,
-          stationIds: [repository.observations().find((o) => o.rawTargetName === rawName)?.stationId ?? ''],
-          rawName,
-          adjustmentName: rawName.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 15),
-          outputName: `NTE_ATS34_${rawName}`,
-          role: 'auxiliary' as const,
-          prismProfileId: 'prism-std0',
-          targetHeightM: 0,
-          includeInAdjustment: false,       // never auto-included
-          publishOutput: false,
-          validFrom: new Date().toISOString(),
-          source: 'manual-override' as const,
-          reviewStatus: 'to-review' as const,
-          initialCoordinateStatus: 'to-review' as const,
-          nomenclatureIssues: [],
-        })),
-      ],
+      targets: [...draft.targets, ...newTargets],
+      physicalPoints: [...draft.physicalPoints, ...newPoints],
     });
   };
 
@@ -77,6 +98,7 @@ export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Parti
   const issues = draft.targets.flatMap((t) => t.nomenclatureIssues.map((i) => `${t.rawName}: ${i}`));
 
   return (
+    <div className="space-y-4">
     <Card title="Step 4 - Targets and Prisms"
       actions={
         <div className="flex gap-2">
@@ -183,6 +205,22 @@ export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Parti
         <BatchEdit onApply={batchPatch} prisms={prisms.map((p) => ({ value: p.id, label: p.name }))} />
       </Drawer>
     </Card>
+
+    <PointIdentityPanel
+      stations={draft.stations}
+      targets={draft.targets}
+      physicalPoints={draft.physicalPoints}
+      provisional={draft.provisional}
+      user="wizard"
+      onChange={(targets, physicalPoints) => set({ targets, physicalPoints, provisionalSaved: false })}
+    />
+    {draft.provisional.length === 0 && (
+      <Callout tone="info">
+        Proximity suggestions between stations appear after step 6 (Initial Coordinates) computes
+        independent estimates per prism. You can come back to this step to confirm links.
+      </Callout>
+    )}
+    </div>
   );
 }
 

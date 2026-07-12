@@ -255,10 +255,12 @@ export type InitialCoordinateStatus =
 
 export interface TargetMapping {
   id: string;
-  stationIds: string[];        // stations observing this target
+  stationIds: string[];        // stations observing this target (usually one)
+  btmPrismId: string;          // BTM prism registration id (stable, per station)
   rawName: string;             // field name - never modified
   adjustmentName: string;      // internal engine name (Star*Net compatible)
   outputName: string;          // BTM output name
+  physicalPointId: string;     // resolved physical identity (versioned link)
   role: TargetRole;
   prismProfileId: string;
   grade?: string;
@@ -271,6 +273,49 @@ export interface TargetMapping {
   reviewStatus: 'ok' | 'to-review';
   initialCoordinateStatus: InitialCoordinateStatus;
   nomenclatureIssues: string[];  // forbidden chars, too long, collisions...
+}
+
+// ------------------------------------------------------- Physical points --
+// A Physical Point is the common topographic identity observed by one or
+// several BTM prisms (possibly from different stations). It is versioned by
+// the ConfigurationVersion it belongs to; the resolved engine name is what
+// the adjustment engine / Star*Net input uses.
+export type PhysicalPointState =
+  | 'resolved'        // a confirmed physical identity (single or shared)
+  | 'shared'          // linked to several BTM prisms across stations
+  | 'unresolved'      // detected but not yet confirmed (default for new)
+  | 'suggested'       // a link candidate awaiting human decision
+  | 'inconsistent';   // contributing estimates disagree beyond tolerance
+
+export type PhysicalPointSource =
+  | 'existing'        // reused from a previous configuration
+  | 'import'          // provided by a business id at import
+  | 'suggestion'      // proposed by BTM (accepted)
+  | 'manual'          // manual human confirmation
+  | 'default';        // implicit own-point for a non-shared prism
+
+export interface PhysicalPoint {
+  id: string;
+  label: string;              // human label (e.g. "MP05" or "Pillar P00045")
+  engineName: string;         // resolved Star*Net-compatible id, unique in run
+  role: TargetRole;
+  outputName?: string;        // BTM output name for the shared point
+  btmPrismIds: string[];      // contributing BTM prism registrations
+  state: PhysicalPointState;
+  source: PhysicalPointSource;
+  confidence?: number;        // 0..1 for suggestions
+  rationale?: string;         // explanation of a suggestion / decision
+  decidedBy?: string;
+  decidedAt?: ISODate;
+  note?: string;
+}
+
+export interface PhysicalPointSuggestion {
+  kind: 'prior-config' | 'business-id' | 'coordinate-proximity' | 'nomenclature' | 'existing-relation';
+  btmPrismIds: string[];
+  confidence: number;
+  rationale: string;
+  distanceM?: number;
 }
 
 export interface ReferencePoint {
@@ -343,6 +388,7 @@ export interface ConfigurationVersion {
   stations: Station[];
   prismSetups: StationPrismSetup[];
   targets: TargetMapping[];
+  physicalPoints: PhysicalPoint[];     // versioned point-identity mapping
   referenceSetId: string;
   provisionalCoordinates: ProvisionalCoordinate[];
   adjustment: AdjustmentTemplate;      // resolved copy, not a reference
@@ -413,8 +459,18 @@ export interface CorrectionTrace {
   warnings: string[];
 }
 
+/** Resolved point mapping stored in a run snapshot (engine id -> contributors) */
+export interface ResolvedPointMapping {
+  engineName: string;
+  physicalPointId: string;
+  label: string;
+  role: TargetRole;
+  contributors: { stationId: string; btmPrismId: string; rawName: string }[];
+}
+
 export interface AdjustedCoordinate {
-  targetId: string;
+  targetId: string;            // engine name (resolved from the physical point)
+  physicalPointId?: string;
   role: TargetRole;
   easting: number;
   northing: number;
@@ -502,6 +558,7 @@ export interface AdjustmentRun {
   provisionalReasons: string[];
   stationEpochs: StationEpochUsage[];
   observationIds: string[];
+  resolvedMapping: ResolvedPointMapping[];   // immutable snapshot of the point mapping used
   corrections: CorrectionTrace[];
   attempts: AdjustmentAttempt[];
   finalAttempt: number;

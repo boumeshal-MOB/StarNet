@@ -19,6 +19,7 @@ import { repository, getDeliveryState, setDeliveryState, type DeliveryState } fr
 import { COUNTRY_TEMPLATES, DEFAULT_ADJUSTMENT, DEFAULT_OUTPUT, DEFAULT_RUN } from '../data/templates';
 import { loadPersisted, savePersisted, clearPersisted } from '../data/db';
 import { runAdjustmentAsync } from '../engine/engineClient';
+import { buildResolvedMapping, validatePointMapping } from '../engine/pointIdentity';
 import type { RunnerInput, RunnerOutput } from '../engine/runner';
 import {
   buildArtifacts, buildOutputValues, buildRunnerInput, deriveStatus,
@@ -184,6 +185,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const s = stateRef.current;
     const refSet = findReferenceSet(config, s.referenceSets) ?? analysisRefSets.get(config.referenceSetId);
     if (!refSet) return { error: `Reference set ${config.referenceSetId} not found` };
+    // pre-run point-mapping checks: blocking issues stop the run before the engine
+    const mappingIssues = validatePointMapping(config);
+    const blocking = mappingIssues.filter((i) => i.level === 'blocking');
+    if (blocking.length > 0) {
+      return { error: `Point mapping check failed: ${blocking.map((b) => b.message).join(' | ')}` };
+    }
     const allObs = repository.observations();
     const cycles = selectCycles(config, slot, allObs);
     if (cycles.fatal) return { error: cycles.fatal };
@@ -223,6 +230,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       provisionalReasons,
       stationEpochs: cycles.usage,
       observationIds: cycles.observations.map((o) => o.id),
+      resolvedMapping: buildResolvedMapping(config),
       corrections: output.corrections,
       attempts: output.attempts,
       finalAttempt: output.finalAttempt,
@@ -234,6 +242,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         slot: new Date(slot).toISOString(),
         stationEpochs: cycles.usage,
         observationIds: cycles.observations.map((o) => o.id),
+        resolvedPointMapping: buildResolvedMapping(config),
         adjustment: config.adjustment,
         overrides: {
           excluded: opts.excludedObservationIds ?? [],
@@ -321,14 +330,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     update((x) => ({ ...x, busy: 'Running adjustment...' }));
     try {
       let slot: number;
+      const cfg0 = s.configVersions.find((c) => c.id ===
+        s.processings.find((p) => p.id === processingId)?.activeConfigurationVersionId);
       if (opts.slotIso) {
         slot = new Date(opts.slotIso).getTime();
       } else {
-        // latest slot having data for the first required station
-        const obs = repository.observations();
+        // latest slot having data for THIS processing's stations only
+        const stationIds = new Set(cfg0?.stations.map((st) => st.id) ?? []);
+        const obs = repository.observations().filter((o) => stationIds.has(o.stationId));
         const last = obs.reduce((acc, o) => Math.max(acc, new Date(o.epoch).getTime()), 0);
-        const cfg0 = s.configVersions.find((c) => c.id ===
-          s.processings.find((p) => p.id === processingId)?.activeConfigurationVersionId);
+        if (last === 0) {
+          logAudit('run', 'failed', 'No observations available for the stations of this processing', processingId);
+          return null;
+        }
         slot = slotMs(cfg0?.outputPolicy.outputIntervalMin ?? 30, last);
       }
       const config = opts.configVersionId

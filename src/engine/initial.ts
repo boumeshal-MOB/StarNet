@@ -26,11 +26,16 @@ export interface InitialComputationInput {
   corrections: Map<string, CorrectionTrace>;   // by observation id
   stations: Station[];
   references: ReferencePoint[];
-  /** rawName -> adjustmentName */
+  /**
+   * `${stationId}|${rawName}` -> resolved engine name (via the physical
+   * point identity). Keyed per station because the same field name on two
+   * stations may be two different physical points, and different field
+   * names may resolve to one shared point.
+   */
   nameMap: Map<string, string>;
-  /** adjustmentName -> target height (m) */
+  /** engine name -> target height (m) */
   targetHeights: Map<string, number>;
-  /** adjustmentNames of points treated as known references */
+  /** engine names of points treated as known references */
   referenceIds: Set<string>;
   epochFrom: string;
   epochTo: string;
@@ -52,7 +57,7 @@ export function computeInitialCoordinates(input: InitialComputationInput): Initi
   // group observations by station, keep latest per (station, target) in period
   const byStationTarget = new Map<string, RawObservation>();
   for (const o of observations) {
-    const adjName = nameMap.get(o.rawTargetName) ?? o.rawTargetName;
+    const adjName = nameMap.get(`${o.stationId}|${o.rawTargetName}`) ?? o.rawTargetName;
     const key = `${o.stationId}|${adjName}`;
     const prev = byStationTarget.get(key);
     if (!prev || new Date(o.epoch) > new Date(prev.epoch)) byStationTarget.set(key, o);

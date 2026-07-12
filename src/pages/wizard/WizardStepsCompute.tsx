@@ -3,8 +3,8 @@ import type { WizardDraft } from './wizardTypes';
 import {
   Badge, Button, Callout, Card, Field, NumberInput, Select, TableWrap, TextInput, Toggle,
 } from '../../components/ui';
-import { computeProvisional } from '../../store/seed';
 import { computeInitialCoordinates } from '../../engine/initial';
+import { resolveEngineName } from '../../engine/pointIdentity';
 import { correctDistance, lookupEnvironment } from '../../engine/corrections';
 import { repository } from '../../data/repository';
 import { fmtArcSec, fmtM, fmtMm } from '../../lib/format';
@@ -26,10 +26,15 @@ export function StepInitial({ draft, set }: { draft: WizardDraft; set: (p: Parti
     const instruments = Object.fromEntries(repository.instrumentProfiles().map((p) => [p.id, p]));
     const setupByKey = new Map(draft.setups.map((s) => [`${s.stationId}|${s.targetKey}`, s]));
     const corrections = new Map<string, CorrectionTrace>();
-    const nameMap = new Map(draft.targets.map((t) => [t.rawName, t.adjustmentName]));
+    // per (station, field name) -> engine name via the physical point mapping
+    const nameMap = new Map<string, string>();
+    for (const t of draft.targets) {
+      const engineName = resolveEngineName(t, draft.physicalPoints);
+      for (const sid of t.stationIds) nameMap.set(`${sid}|${t.rawName}`, engineName);
+    }
     for (const o of observations) {
       const st = draft.stations.find((s) => s.id === o.stationId);
-      const adjName = nameMap.get(o.rawTargetName);
+      const adjName = nameMap.get(`${o.stationId}|${o.rawTargetName}`);
       if (!st || !adjName) continue;
       const setup = setupByKey.get(`${o.stationId}|${o.rawTargetName}`);
       corrections.set(o.id, correctDistance({
@@ -45,7 +50,7 @@ export function StepInitial({ draft, set }: { draft: WizardDraft; set: (p: Parti
       stations: draft.stations,
       references: refSet.points,
       nameMap,
-      targetHeights: new Map(draft.targets.map((t) => [t.adjustmentName, t.targetHeightM])),
+      targetHeights: new Map(draft.targets.map((t) => [resolveEngineName(t, draft.physicalPoints), t.targetHeightM])),
       referenceIds: new Set(refSet.points.map((p) => p.pointId)),
       epochFrom: new Date(fromMs).toISOString(),
       epochTo: new Date(toMs).toISOString(),
@@ -55,7 +60,7 @@ export function StepInitial({ draft, set }: { draft: WizardDraft; set: (p: Parti
       orientations: result.orientations,
       initFailures: result.failures,
       provisionalSaved: false,
-      targets: draft.targets.map((t) => result.provisional.some((p) => p.targetId === t.adjustmentName)
+      targets: draft.targets.map((t) => result.provisional.some((p) => p.targetId === resolveEngineName(t, draft.physicalPoints))
         ? { ...t, initialCoordinateStatus: 'computed' as const } : t),
     });
     setComputed(true);

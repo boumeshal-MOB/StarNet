@@ -12,6 +12,9 @@ import type {
 import type { RunnerInput, RunnerOutput } from '../engine/runner';
 import { repository } from '../data/repository';
 
+/** grouping window for one observation cycle (a real cycle spans ~10-15 min) */
+const CYCLE_WINDOW_MS = 20 * 60000;
+
 export function slotMs(intervalMin: number, epochMs: number): number {
   const step = intervalMin * 60000;
   return Math.round(epochMs / step) * step;
@@ -62,9 +65,9 @@ export function selectCycles(
     let state: StationEpochUsage['state'] = 'missing';
     let epoch = '';
     if (inWindow.length > 0) {
-      // latest cycle in the window: all obs within 3 min of the newest epoch
+      // latest cycle in the window: all obs within the cycle window of the newest epoch
       const newest = new Date(inWindow[inWindow.length - 1].epoch).getTime();
-      cycle = inWindow.filter((o) => Math.abs(new Date(o.epoch).getTime() - newest) < 3 * 60000);
+      cycle = inWindow.filter((o) => Math.abs(new Date(o.epoch).getTime() - newest) < CYCLE_WINDOW_MS);
       state = 'fresh';
       epoch = inWindow[inWindow.length - 1].epoch;
     } else if (run.reuseMissingStation) {
@@ -74,7 +77,7 @@ export function selectCycles(
       });
       if (before.length > 0) {
         const newest = new Date(before[before.length - 1].epoch).getTime();
-        cycle = before.filter((o) => Math.abs(new Date(o.epoch).getTime() - newest) < 3 * 60000);
+        cycle = before.filter((o) => Math.abs(new Date(o.epoch).getTime() - newest) < CYCLE_WINDOW_MS);
         state = 'reused';
         epoch = before[before.length - 1].epoch;
         if (run.markReusedProvisional) {
@@ -126,6 +129,7 @@ export function buildRunnerInput(
     instruments,
     prismSetups: config.prismSetups,
     targets: config.targets,
+    physicalPoints: config.physicalPoints ?? [],
     references: referenceSet.points,
     provisional,
     adjustment: config.adjustment,

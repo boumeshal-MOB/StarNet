@@ -8,10 +8,11 @@ import {
 import { fmtDateTime, fmtM, fmtMm, fmtNum } from '../lib/format';
 import type { AdjustmentTemplate, ConfigurationVersion } from '../types/domain';
 import { repository } from '../data/repository';
+import { PointIdentityPanel } from '../components/PointIdentityPanel';
 
 const TAB_IDS = ['Overview', 'Configurations', 'Stations & Instruments', 'Targets & Prisms',
-  'Reference Sets', 'Initial Coordinates', 'Adjustment Settings', 'Run & Synchronization',
-  'Output Variables', 'Runs & Results', 'Audit Log'];
+  'Point Identity', 'Reference Sets', 'Initial Coordinates', 'Adjustment Settings',
+  'Run & Synchronization', 'Output Variables', 'Runs & Results', 'Audit Log'];
 
 export function ProcessingAdminPage() {
   const { id } = useParams();
@@ -68,6 +69,7 @@ export function ProcessingAdminPage() {
       {tab === 'Configurations' && <ConfigurationsTab processingId={processing.id} />}
       {tab === 'Stations & Instruments' && config && <StationsTab config={config} />}
       {tab === 'Targets & Prisms' && config && <TargetsTab config={config} />}
+      {tab === 'Point Identity' && config && <PointIdentityTab config={config} />}
       {tab === 'Reference Sets' && <ReferenceSetsTab processingId={processing.id} />}
       {tab === 'Initial Coordinates' && config && <InitialTab config={config} />}
       {tab === 'Adjustment Settings' && config && <AdjustmentTab config={config} />}
@@ -308,6 +310,94 @@ function TargetsTab({ config }: { config: ConfigurationVersion }) {
         </tbody>
       </TableWrap>
     </Card>
+  );
+}
+
+// --------------------------------------------------------- point identity --
+function PointIdentityTab({ config }: { config: ConfigurationVersion }) {
+  const { state, actions } = useApp();
+  const [draft, setDraft] = useState<{ targets: ConfigurationVersion['targets']; physicalPoints: ConfigurationVersion['physicalPoints'] } | null>(null);
+  const [changeLog, setChangeLog] = useState<string[]>([]);
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [label, setLabel] = useState('');
+  const [validFrom, setValidFrom] = useState(new Date().toISOString().slice(0, 16));
+  const [activate, setActivate] = useState(true);
+
+  const editing = draft !== null;
+  const targets = draft?.targets ?? config.targets;
+  const physicalPoints = draft?.physicalPoints ?? config.physicalPoints;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="max-w-3xl text-xs text-slate-500">
+          Versioned mapping between BTM prism registrations and physical points. The mapping
+          belongs to the configuration version{config.usedByRun ? ' - this version was used by runs, so it is immutable: changes below are staged and saved as a NEW version' : ''}.
+          Historical recalculations always reuse the mapping version valid for the recomputed period,
+          and every run snapshot stores the resolved engine-id ↔ prisms correspondence.
+        </p>
+        {!editing
+          ? <Button size="xs" variant="primary" onClick={() => setDraft({
+            targets: JSON.parse(JSON.stringify(config.targets)),
+            physicalPoints: JSON.parse(JSON.stringify(config.physicalPoints)),
+          })}>Edit mapping{config.usedByRun ? ' → new version' : ''}</Button>
+          : (
+            <div className="flex gap-2">
+              <Button size="xs" onClick={() => { setDraft(null); setChangeLog([]); }}>Discard changes</Button>
+              <Button size="xs" variant="primary" disabled={changeLog.length === 0}
+                onClick={() => setSaveOpen(true)}>
+                Save as new version... ({changeLog.length} change(s))
+              </Button>
+            </div>
+          )}
+      </div>
+      {editing && changeLog.length > 0 && (
+        <Callout tone="info">Staged changes: {changeLog.join(' · ')}</Callout>
+      )}
+      <PointIdentityPanel
+        stations={config.stations}
+        targets={targets}
+        physicalPoints={physicalPoints}
+        provisional={config.provisionalCoordinates}
+        readOnly={!editing}
+        user={state.user}
+        onChange={(t, pp, summary) => {
+          setDraft({ targets: t, physicalPoints: pp });
+          setChangeLog((l) => [...l, summary]);
+        }}
+      />
+      <Modal open={saveOpen} onClose={() => setSaveOpen(false)} title="Save point mapping as new configuration version"
+        footer={
+          <>
+            <Button onClick={() => setSaveOpen(false)}>Cancel</Button>
+            <Button variant="primary" disabled={!label.trim()} onClick={() => {
+              if (!draft) return;
+              actions.createConfigVersion(config.processingId, config, {
+                targets: draft.targets,
+                physicalPoints: draft.physicalPoints,
+              }, {
+                label,
+                description: `Point identity mapping updated: ${changeLog.join('; ')}`,
+                technicalReason: changeLog.join('; '),
+                validFrom: new Date(validFrom + (validFrom.endsWith('Z') ? '' : ':00Z')).toISOString(),
+                activate,
+              });
+              setSaveOpen(false); setDraft(null); setChangeLog([]);
+            }}>Create version</Button>
+          </>
+        }>
+        <div className="space-y-3">
+          <Callout tone="info">
+            The current version and every past run stay untouched. Runs after "valid from" will use
+            the new mapping; a reprocess of an older period keeps using the version valid then.
+          </Callout>
+          <Field label="Version label"><TextInput value={label} onChange={(e) => setLabel(e.target.value)}
+            placeholder='e.g. "V3 - MP04_34 and MP04_35 linked as one point"' /></Field>
+          <Field label="Valid from"><TextInput type="datetime-local" value={validFrom} onChange={(e) => setValidFrom(e.target.value)} /></Field>
+          <Toggle checked={activate} onChange={setActivate} label="Activate immediately" />
+        </div>
+      </Modal>
+    </div>
   );
 }
 

@@ -6,11 +6,12 @@
 
 import type {
   AdjustedCoordinate, AdjustmentAttempt, AdjustmentTemplate, CorrectionTrace,
-  EnvironmentalObservation, InstrumentProfile, ObservationUsage, QualityReport,
-  RawObservation, ReferencePoint, Station, StationPrismSetup, TargetMapping,
+  EnvironmentalObservation, InstrumentProfile, ObservationUsage, PhysicalPoint,
+  QualityReport, RawObservation, ReferencePoint, Station, StationPrismSetup, TargetMapping,
 } from '../types/domain';
 import { ARCSEC2RAD, DEG2RAD } from './geometry';
 import { correctDistance, lookupEnvironment } from './corrections';
+import { resolveEngineName } from './pointIdentity';
 import {
   adjustNetwork, type AdjustResult, type EngineConstraint, type EngineObservation,
   type EnginePoint,
@@ -23,6 +24,7 @@ export interface RunnerInput {
   instruments: Record<string, InstrumentProfile>;
   prismSetups: StationPrismSetup[];
   targets: TargetMapping[];
+  physicalPoints: PhysicalPoint[];     // resolves engine names (point identity)
   references: ReferencePoint[];
   provisional: Record<string, { e: number; n: number; h: number }>;
   adjustment: AdjustmentTemplate;
@@ -64,8 +66,15 @@ export function runAdjustment(input: RunnerInput): RunnerOutput {
   }
 
   const stationById = new Map(input.stations.map((s) => [s.id, s]));
-  const targetByRaw = new Map<string, TargetMapping>();
-  for (const t of input.targets) targetByRaw.set(t.rawName, t);
+  // keyed per (station, field name): the same field name on two stations may
+  // be two different physical points (never merged by name alone)
+  const targetByKey = new Map<string, TargetMapping>();
+  for (const t of input.targets) {
+    for (const sid of t.stationIds) targetByKey.set(`${sid}|${t.rawName}`, t);
+  }
+  const mappingFor = (o: RawObservation) => targetByKey.get(`${o.stationId}|${o.rawTargetName}`);
+  // engine id resolved through the physical point identity (versioned link)
+  const engineNameOf = (t: TargetMapping) => resolveEngineName(t, input.physicalPoints ?? []);
   const setupByKey = new Map(input.prismSetups.map((s) => [`${s.stationId}|${s.targetKey}`, s]));
   const refByName = new Map(input.references.map((r) => [r.pointId, r]));
 
@@ -74,7 +83,7 @@ export function runAdjustment(input: RunnerInput): RunnerOutput {
   const correctedSd = new Map<string, number>();
   for (const o of input.observations) {
     const station = stationById.get(o.stationId);
-    const mapping = targetByRaw.get(o.rawTargetName);
+    const mapping = mappingFor(o);
     if (!station || !mapping) continue;
     const setup = setupByKey.get(`${o.stationId}|${o.rawTargetName}`);
     const instrument = instruments[station.instrumentProfileId];
@@ -97,7 +106,7 @@ export function runAdjustment(input: RunnerInput): RunnerOutput {
       instrument,
       env,
       datumScale: adj.projectionMode === 'grid' ? adj.datumScaleFactor : 1,
-      targetId: mapping.adjustmentName,
+      targetId: engineNameOf(mapping),
     });
     corrections.push(trace);
     correctedSd.set(o.id, trace.finalDistanceM);
@@ -110,7 +119,7 @@ export function runAdjustment(input: RunnerInput): RunnerOutput {
   // unknowns without observations (artificial rank deficiency)
   const observedStations = new Set(input.observations.map((o) => o.stationId));
   const observedTargets = new Set(input.observations
-    .map((o) => targetByRaw.get(o.rawTargetName)?.adjustmentName)
+    .map((o) => { const m = mappingFor(o); return m ? engineNameOf(m) : undefined; })
     .filter((x): x is string => !!x));
 
   const points: EnginePoint[] = [];
@@ -129,10 +138,15 @@ export function runAdjustment(input: RunnerInput): RunnerOutput {
     }
   }
   for (const r of input.references) {
-    if (seen.has(r.pointId)) continue;
-    if (!observedTargets.has(r.pointId)) continue;
-    points.push({ id: r.pointId, e: r.easting, n: r.northing, h: r.height, free: true, role: 'reference' });
-    seen.add(r.pointId);
+    const isStationPoint = seen.has(r.pointId); // e.g. loose station prior in the header
+    if (!isStationPoint) {
+      if (!observedTargets.has(r.pointId)) continue;
+      points.push({ id: r.pointId, e: r.easting, n: r.northing, h: r.height, free: true, role: 'reference' });
+      seen.add(r.pointId);
+    }
+    // constraints apply to reference targets AND to station points listed in
+    // the header (a station prior only makes sense if the station is free)
+    if (isStationPoint && !stationById.get(r.pointId)?.adjustable) continue;
     const sigmaFor = (mode: string, sigma?: number) =>
       mode === 'fixed' ? adj.fixedConstraintSigmaM : mode === 'weak' ? (sigma ?? 0.01) : undefined;
     const sE = sigmaFor(r.modeE, r.sigmaE);
@@ -144,20 +158,21 @@ export function runAdjustment(input: RunnerInput): RunnerOutput {
   }
   const skippedTargets: string[] = [];
   for (const t of input.targets) {
-    if (seen.has(t.adjustmentName)) continue;
+    const engineName = engineNameOf(t);
+    if (seen.has(engineName)) continue;
     if (!t.includeInAdjustment) continue;
-    if (!observedTargets.has(t.adjustmentName)) continue;
+    if (!observedTargets.has(engineName)) continue;
     if (t.role === 'reference') continue; // reference targets come from the reference set
-    const prov = input.provisional[t.adjustmentName];
+    const prov = input.provisional[engineName];
     if (!prov) {
-      skippedTargets.push(t.adjustmentName);
+      skippedTargets.push(engineName);
       continue;
     }
     points.push({
-      id: t.adjustmentName, e: prov.e, n: prov.n, h: prov.h, free: true,
+      id: engineName, e: prov.e, n: prov.n, h: prov.h, free: true,
       role: t.role === 'monitoring' ? 'monitoring' : 'auxiliary',
     });
-    seen.add(t.adjustmentName);
+    seen.add(engineName);
   }
   if (skippedTargets.length) {
     prepWarnings.push(`No provisional coordinates for: ${skippedTargets.join(', ')} - excluded from adjustment`);
@@ -167,10 +182,11 @@ export function runAdjustment(input: RunnerInput): RunnerOutput {
   const engineObs: EngineObservation[] = [];
   for (const o of input.observations) {
     const station = stationById.get(o.stationId);
-    const mapping = targetByRaw.get(o.rawTargetName);
+    const mapping = mappingFor(o);
     if (!station || !mapping) continue;
     if (!mapping.includeInAdjustment) continue;
-    if (!seen.has(mapping.adjustmentName)) continue;
+    const engineName = engineNameOf(mapping);
+    if (!seen.has(engineName)) continue;
     const instrument = instruments[station.instrumentProfileId];
     const setup = setupByKey.get(`${o.stationId}|${o.rawTargetName}`);
     const targetHeight = setup?.targetHeightM ?? mapping.targetHeightM;
@@ -202,7 +218,7 @@ export function runAdjustment(input: RunnerInput): RunnerOutput {
       if (excluded.has(id) || excluded.has(o.id)) return;
       engineObs.push({
         id, rawObservationId: o.id, stationId: o.stationId,
-        targetId: mapping.adjustmentName, kind, value, sigma,
+        targetId: engineName, kind, value, sigma,
         instrumentHeightM: station.instrumentHeightM, targetHeightM: targetHeight,
         protected: isProtected || protectedIds.has(id),
       });
@@ -327,6 +343,8 @@ function buildAttempt(
   }
 
   const provisional = input.provisional;
+  const ppByEngine = new Map(input.targets.map((t) =>
+    [resolveEngineName(t, input.physicalPoints ?? []), t.physicalPointId] as const));
   const coordinates: AdjustedCoordinate[] = result.points
     .filter((p) => p.role !== 'station' || input.stations.find((s) => s.id === p.id)?.adjustable)
     .map((p) => {
@@ -334,6 +352,7 @@ function buildAttempt(
       const rays = raysByTarget.get(p.id)?.size ?? 0;
       return {
         targetId: p.id,
+        physicalPointId: ppByEngine.get(p.id),
         role: p.role === 'station' ? 'auxiliary' : p.role,
         easting: p.e, northing: p.n, height: p.h,
         sigmaE: p.sigmaE, sigmaN: p.sigmaN, sigmaH: p.sigmaH,

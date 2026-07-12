@@ -7,8 +7,9 @@
 
 import {
   ATS36_SILENT_FROM, ENV_GAP_FROM, FIXTURE_END, FIXTURE_START,
-  generateAts34Fixture, type Ats34Fixture,
+  generateAts34Fixture, type Ats34Fixture, type HeaderRow, type LookupRow,
 } from './fixture';
+import { getRealProject } from './realProject';
 import type { EnvironmentalObservation, RawObservation, ReferencePoint, ReferenceSet } from '../types/domain';
 
 export interface DeliveryState {
@@ -35,14 +36,14 @@ export function setDeliveryState(s: DeliveryState): void {
 export const repository = {
   project() {
     const f = getFixture();
+    const real = getRealProject();
     const obs = this.observations();
     const epochs = obs.map((o) => o.epoch).sort();
     return {
       project: f.project,
       site: f.site,
-      network: f.network,
-      stations: Object.keys(f.truePoints.filter((p) => p.kind === 'station').reduce(
-        (acc, p) => ({ ...acc, [p.id]: true }), {} as Record<string, boolean>)),
+      network: real ? `${f.network} + ${real.network}` : f.network,
+      stations: this.stationSummaries().map((s) => s.id),
       observationCount: obs.length,
       firstEpoch: epochs[0],
       lastEpoch: epochs[epochs.length - 1],
@@ -54,31 +55,52 @@ export const repository = {
 
   stationSummaries() {
     const f = getFixture();
+    const real = getRealProject();
     const obs = this.observations();
     const env = this.environmental();
-    return f.truePoints.filter((p) => p.kind === 'station').map((s) => {
-      const mine = obs.filter((o) => o.stationId === s.id);
+    const mk = (id: string, approx: { e: number; n: number; h: number }) => {
+      const mine = obs.filter((o) => o.stationId === id);
       const epochs = mine.map((o) => o.epoch).sort();
       const targets = new Set(mine.map((o) => o.rawTargetName));
-      const hasEnv = env.some((e) => e.stationId === s.id);
+      const hasEnv = env.some((e) => e.stationId === id);
+      // median gap between distinct cycles as estimated cadence
+      let cycleMin = 30;
+      if (mine.length > 1) {
+        const times = [...new Set(epochs.map((e) => new Date(e).getTime()))].sort((a, b) => a - b);
+        const gaps = [];
+        for (let i = 1; i < times.length; i++) {
+          const g = times[i] - times[i - 1];
+          if (g > 15 * 60000) gaps.push(g);
+        }
+        if (gaps.length) {
+          gaps.sort((a, b) => a - b);
+          cycleMin = Math.round(gaps[Math.floor(gaps.length / 2)] / 60000);
+        }
+      }
       return {
-        id: s.id,
-        approxE: s.e, approxN: s.n, approxH: s.h,
+        id,
+        approxE: approx.e, approxN: approx.n, approxH: approx.h,
         lastObservation: epochs[epochs.length - 1],
         targetCount: targets.size,
-        estimatedCycleMin: 30,
+        estimatedCycleMin: cycleMin,
         environmentalData: hasEnv,
         readiness: mine.length > 0 ? 'Ready' : 'Waiting for data',
       };
-    });
+    };
+    const list = f.truePoints.filter((p) => p.kind === 'station')
+      .map((s) => mk(s.id, { e: s.e, n: s.n, h: s.h }));
+    if (real) list.push(mk(real.stationId, real.stationApprox));
+    return list;
   },
 
-  /** all raw observations currently delivered to BTM */
+  /** all raw observations currently delivered to BTM (both networks) */
   observations(): RawObservation[] {
     const f = getFixture();
-    return delivery.ats36LateDelivered
+    const real = getRealProject();
+    const synthetic = delivery.ats36LateDelivered
       ? [...f.rawObservations, ...f.lateObservations]
       : f.rawObservations;
+    return real ? [...synthetic, ...real.rawObservations] : synthetic;
   },
 
   observationsInWindow(stationIds: string[], fromMs: number, toMs: number): RawObservation[] {
@@ -96,8 +118,15 @@ export const repository = {
       : f.environmental;
   },
 
-  lookup() { return getFixture().lookup; },
-  header() { return getFixture().header; },
+  lookup(): LookupRow[] {
+    const real = getRealProject();
+    return real ? [...getFixture().lookup, ...real.lookup] : getFixture().lookup;
+  },
+  header(): HeaderRow[] {
+    const real = getRealProject();
+    return real ? [...getFixture().header, ...real.header] : getFixture().header;
+  },
+  realProject() { return getRealProject(); },
   instrumentProfiles() { return getFixture().instrumentProfiles; },
   prismProfiles() { return getFixture().prismProfiles; },
   provenance() { return getFixture().provenance; },
@@ -118,9 +147,15 @@ export const repository = {
     };
   },
 
-  /** Build reference sets from the header block (grouped by Used-from cycle). */
-  referenceSetsFromHeader(processingId: string, user: string): ReferenceSet[] {
-    const header = this.header();
+  /**
+   * Build reference sets from the header block (grouped by Used-from cycle).
+   * `pointFilter` scopes the header rows to one project/network so cycles of
+   * different projects never mix.
+   */
+  referenceSetsFromHeader(
+    processingId: string, user: string, pointFilter?: (pointId: string) => boolean,
+  ): ReferenceSet[] {
+    const header = pointFilter ? this.header().filter((h) => pointFilter(h.PointId)) : this.header();
     const cycles = [...new Set(header.map((h) => h.UsedFromCycle))].sort();
     return cycles.map((cycle, i) => {
       // a cycle's set = latest row per point at that cycle

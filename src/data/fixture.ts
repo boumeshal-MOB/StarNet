@@ -74,6 +74,11 @@ export const VISIBILITY: Record<string, string[]> = {
 
 /** raw field names as recorded by each RTS (Lookup maps them) */
 export function rawName(stationId: string, targetId: string): string {
+  // Scenario "same field name, different physical points": two French-style
+  // MPO names reused by different crews on different stations. ATS34 calls
+  // MP03 "MPO001"; ATS36 calls MP07 "MPO001". Same name, distinct points.
+  if (stationId === 'ATS34' && targetId === 'MP03') return 'MPO001';
+  if (stationId === 'ATS36' && targetId === 'MP07') return 'MPO001';
   return `${targetId}_${stationId.slice(-2)}`; // e.g. MP01_34
 }
 

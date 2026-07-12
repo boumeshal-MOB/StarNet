@@ -4,12 +4,9 @@
 import { describe, expect, it } from 'vitest';
 import { repository } from '../../data/repository';
 import { BAD_OBS_SLOT, TRUE_POINTS } from '../../data/fixture';
-import { seedDemo } from '../../store/seed';
+import { computeProvisional, seedDemo } from '../../store/seed';
 import { buildRunnerInput, selectCycles } from '../../store/runExecution';
 import { runAdjustment } from '../runner';
-import { computeInitialCoordinates } from '../initial';
-import { correctDistance, lookupEnvironment } from '../corrections';
-import type { CorrectionTrace } from '../../types/domain';
 
 const seed = seedDemo();
 const configV1 = seed.configVersions.find((c) => c.id === 'proc-nte-ats34-v1')!;
@@ -28,39 +25,17 @@ describe('initial coordinates from real observations', () => {
   it('recovers the true monitoring positions within a few millimetres', () => {
     const fromMs = Date.UTC(2026, 6, 8, 0, 0, 0);
     const toMs = fromMs + 2 * 3600000;
-    const observations = repository.observationsInWindow(['ATS34', 'ATS35', 'ATS36'], fromMs, toMs);
-    const instruments = Object.fromEntries(repository.instrumentProfiles().map((p) => [p.id, p]));
-    const setupByKey = new Map(configV1.prismSetups.map((s) => [`${s.stationId}|${s.targetKey}`, s]));
-    const nameMap = new Map(configV1.targets.map((t) => [t.rawName, t.adjustmentName]));
-    const corrections = new Map<string, CorrectionTrace>();
-    for (const o of observations) {
-      const st = configV1.stations.find((s) => s.id === o.stationId)!;
-      const adjName = nameMap.get(o.rawTargetName);
-      if (!adjName) continue;
-      corrections.set(o.id, correctDistance({
-        observation: o, station: st,
-        setup: setupByKey.get(`${o.stationId}|${o.rawTargetName}`)!,
-        instrument: instruments[st.instrumentProfileId],
-        env: lookupEnvironment(st, o.epoch, repository.environmental()),
-        datumScale: 1, targetId: adjName,
-      }));
-    }
-    const res = computeInitialCoordinates({
-      observations, corrections,
-      stations: configV1.stations,
-      references: refSetV1.points,
-      nameMap,
-      targetHeights: new Map(configV1.targets.map((t) => [t.adjustmentName, t.targetHeightM])),
-      referenceIds: new Set(refSetV1.points.map((p) => p.pointId)),
-      epochFrom: new Date(fromMs).toISOString(),
-      epochTo: new Date(toMs).toISOString(),
-    });
-    expect(res.orientations.every((o) => o.orientationRad !== undefined)).toBe(true);
-    const mp1 = res.provisional.find((p) => p.targetId === 'MP01')!;
+    const provisional = computeProvisional(
+      configV1.stations, configV1.targets, configV1.prismSetups,
+      configV1.physicalPoints, refSetV1, fromMs, toMs,
+    );
+    const mp1 = provisional.find((p) => p.targetId === 'MP01')!;
     const truth = TRUE_POINTS.find((p) => p.id === 'MP01')!;
     expect(Math.abs(mp1.easting - truth.e)).toBeLessThan(0.01);
     expect(Math.abs(mp1.northing - truth.n)).toBeLessThan(0.01);
     expect(Math.abs(mp1.height - truth.h)).toBeLessThan(0.01);
+    // MP01 is a shared physical point observed from two stations
+    expect(mp1.perStation.length).toBeGreaterThanOrEqual(2);
   });
 });
 

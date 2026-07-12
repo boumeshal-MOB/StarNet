@@ -9,7 +9,7 @@ import { fmtDateTime } from '../../lib/format';
 import {
   WIZARD_STEPS, type WizardDraft, defaultDraft, loadDraft, saveDraft,
 } from './wizardTypes';
-import { buildStations, buildTargetsAndSetups, expandTargetAliases } from '../../store/seed';
+import { buildStations, buildTargetsAndSetups } from '../../store/seed';
 import { StepTargets, StepReferences } from './WizardStepsTargets';
 import { StepInitial, StepAdjustment } from './WizardStepsCompute';
 import { StepRun, StepOutput, StepReview } from './WizardStepsRun';
@@ -98,14 +98,26 @@ function prepareNextStep(d: WizardDraft): WizardDraft {
       && d.stations.every((s) => d.stationIds.includes(s.id));
     if (!sameStations) {
       const stations = buildStations(d.stationIds);
-      const { targets, setups } = buildTargetsAndSetups(d.stationIds);
-      const aliases = expandTargetAliases(targets, d.stationIds);
+      // scope the header rows to the selected network (real vs synthetic)
+      const real = repository.realProject();
+      const isReal = real ? d.stationIds.includes(real.stationId) : false;
+      const realPointIds = new Set(real?.header.map((h) => h.PointId) ?? []);
+      const refIds = isReal ? new Set(real?.referenceIds ?? []) : undefined;
+      const { targets, setups, physicalPoints } = buildTargetsAndSetups(d.stationIds, refIds);
       const procId = 'wizard-tmp';
-      const refSets = repository.referenceSetsFromHeader(procId, 'wizard');
+      const refSets = repository.referenceSetsFromHeader(procId, 'wizard',
+        (id) => (isReal ? realPointIds.has(id) : id.startsWith('REF')));
+      // default initialization window = first cycles of the selected stations
+      const epochs = repository.observations()
+        .filter((o) => d.stationIds.includes(o.stationId))
+        .map((o) => new Date(o.epoch).getTime());
+      const first = epochs.length ? Math.min(...epochs) : Date.now();
       return {
-        ...d, stations, targets: aliases, setups, refSets,
+        ...d, stations, targets, setups, physicalPoints, refSets,
         selectedRefSetId: refSets[0]?.id ?? '',
         provisional: [], provisionalSaved: false,
+        initWindowFrom: new Date(first - 60000).toISOString().slice(0, 16),
+        initWindowTo: new Date(first + 2 * 3600000).toISOString().slice(0, 16),
       };
     }
   }
