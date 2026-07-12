@@ -13,13 +13,13 @@ Aucun backend, aucun Star*Net, aucun import de fichier dans le parcours utilisat
 ```bash
 npm install
 npm run dev          # http://localhost:5173
-npm test             # 25 tests : corrections, χ², QR/covariance, moteur de bout en bout
+npm test             # 39 tests : corrections, χ², QR/covariance, identité des points, moteur (synthétique + données réelles)
 npm run build        # build production (tsc + vite)
 ```
 
-Au premier lancement, deux processings de démonstration sont seedés depuis la base simulée
-(projet **Nantes Tunnel East / NTE_ATS34**, 3 stations ATS34/35/36, 5 références, 8 prismes,
-observations du 2026-07-08 au 2026-07-10 toutes les 30 min). La persistance est en IndexedDB ;
+Au premier lancement, trois processings sont seedés depuis la base simulée : le réseau
+synthétique 3 stations (scénarios réseau), un mono-station synthétique, et le processing
+**données réelles** NTE_ATS34 issu du classeur. La persistance est en IndexedDB ;
 « Reset demo data » sur l'écran `/#/dev/fixture` remet tout à zéro.
 
 ## Tester les scénarios (§14 du cahier des charges)
@@ -39,15 +39,27 @@ Guide détaillé : [`docs/context/04-scenarios.md`](docs/context/04-scenarios.md
 
 ## Données
 
-Le classeur `ATS34 Raw Data, Lookup, Header (1).xlsx` n'étant pas embarqué, la maquette
-utilise un **générateur déterministe** reproduisant exactement sa structure (3 feuilles,
-constantes de prisme 0/8,9/26,5/30 mm, hauteurs 0 m, `!`/`*`/sigma dans le header, périodes
-`Used from cycle`). Les exemples de validation du cahier des charges
-(78,4100 + 0,0089 = 78,4189 m…) sont vérifiés par les tests et affichés sur `/#/dev/fixture`.
+Deux projets sont préchargés comme s'ils venaient de la base BTM :
 
-Pour brancher le vrai classeur : `npm i -D xlsx` puis
-`node scripts/convert-ats34.mjs "ATS34 Raw Data, Lookup, Header (1).xlsx"`
-(voir [`docs/context/02-data-model.md`](docs/context/02-data-model.md)).
+- **Réel** : le classeur `data-source/ATS34 Raw Data, Lookup, Header (1).xlsx` (station
+  unique `NTE_ATS34`, mars 2025, 6494 observations, 9 références) converti par
+  `node scripts/convert-ats34.mjs` → processing « NTE ATS34 - Real data (workbook) ».
+  La résection + rayonnement converge et le χ² bilatéral passe sur les époques réelles.
+- **Synthétique** : générateur déterministe 3 stations (ATS34/35/36) portant les scénarios
+  réseau (désynchronisation, station manquante, changement de références, T/P tardives,
+  observation corrompue) impossibles à rejouer sur un jeu mono-station.
+
+Les exemples de validation du cahier des charges (78,4100 + 0,0089 = 78,4189 m…) sont
+vérifiés par les tests et affichés sur `/#/dev/fixture`.
+
+## Identité des points physiques (Physical Point Mapping)
+
+Chaque prisme BTM (par station) est lié à un **point physique versionné** : distincts par
+défaut, jamais fusionnés sur un simple nom identique (démo `MPO001` intégrée), liaisons
+explicites/datées/justifiées, suggestions par proximité avec confiance, contrôles bloquants
+avant run (collisions d'identifiant moteur, connectivité du réseau), snapshot du mapping
+résolu dans chaque run. Onglet **Point Identity** dans l'administration + panneau à l'étape 4
+du wizard. Détails : [`docs/context/06-physical-points.md`](docs/context/06-physical-points.md).
 
 ## Documentation
 
@@ -57,6 +69,7 @@ Pour brancher le vrai classeur : `npm i -D xlsx` puis
 - [`docs/context/03-engine.md`](docs/context/03-engine.md) — maths du moteur, hypothèses, **limites vs moteur certifié**
 - [`docs/context/04-scenarios.md`](docs/context/04-scenarios.md) — pas-à-pas des scénarios A–H
 - [`docs/context/05-ui-screens.md`](docs/context/05-ui-screens.md) — inventaire des écrans
+- [`docs/context/06-physical-points.md`](docs/context/06-physical-points.md) — identité des points physiques (mapping versionné)
 - `/#/architecture` (dans l'app) — flux BTM cible (Input Builder → worker Star*Net Ultimate →
   parsers `.PTS/.LST/.ERR` → base BTM → front) et couverture explicite de la solution legacy
 

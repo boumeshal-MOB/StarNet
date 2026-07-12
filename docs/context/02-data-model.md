@@ -43,16 +43,28 @@ classeur `ATS34 Raw Data, Lookup, Header (1).xlsx` :
 - Vérifications de conversion (78,4100+0,0089=78,4189 etc.) exposées dans
   `fixture.provenance.validationChecks` et sur l'écran développeur `/dev/fixture`.
 
-## Brancher le vrai classeur
+## Vrai classeur ATS34 (branché depuis la session 2)
 
-1. `npm i -D xlsx`
-2. `node scripts/convert-ats34.mjs "ATS34 Raw Data, Lookup, Header (1).xlsx"`
-   → écrit `src/data/ats34.generated.json` (`{rawObservations, lookup, header}`) et affiche
-   les contrôles de conversion.
-3. Dans `src/data/repository.ts`, remplacer `generateAts34Fixture()` par un chargement du JSON
-   (mêmes types : `RawObservation[]`, `LookupRow[]`, `HeaderRow[]`) ; les buckets
-   `lateObservations`/`lateEnvironmental` deviennent vides ou sont reconstruits selon le besoin
-   de démo. Aucun autre fichier à toucher : tout le reste consomme le repository.
+Le classeur réel `data-source/ATS34 Raw Data, Lookup, Header (1).xlsx` est converti par
+`node scripts/convert-ats34.mjs` → `src/data/ats34.generated.json`, chargé par
+`src/data/realProject.ts` et fusionné dans le repository **à côté** du réseau synthétique :
+
+- station unique `NTE_ATS34`, mars 2025, 6494 observations, cycles ~10 min toutes les ~1-6 h ;
+- 9 références serrées `L34RE1100_*` (σ 1-2 mm) + **prior lâche de la station** dans le header
+  (σE/σN = 0,1 m, hauteur libre `*`) → résection + rayonnement ;
+- constantes 0 / 8,9 / 30 mm, `PrismType/Grade = -1` (non renseignés), noms de colonnes réels
+  avec espaces (`StDev (E) `), cycles `YYYYMMDD_HHMM` ;
+- processing seedé « NTE ATS34 - Real data (workbook) » : le χ² bilatéral passe sur les
+  époques réelles avec le profil TM50 (validation forte du moteur).
+
+Le réseau synthétique multi-stations reste nécessaire pour les scénarios C/D/E/G
+(désynchronisation, station manquante, changement de références, T/P tardives) que le jeu
+réel mono-station ne peut pas exercer.
+
+## Identité des points physiques
+
+Voir `06-physical-points.md` : `TargetMapping.btmPrismId` + `physicalPointId`,
+`PhysicalPoint[]` versionnés dans la ConfigurationVersion, mapping résolu snapshotté par run.
 
 ## Persistance
 

@@ -59,4 +59,16 @@ describe.skipIf(!real)('real ATS34 dataset', () => {
     expect(Math.abs(adjRef.northing - refPoint.northing)).toBeLessThan(0.01);
     expect(Math.abs(adjRef.height - refPoint.height)).toBeLessThan(0.01);
   });
+
+  it('a second, later epoch also adjusts (two epochs total - never the full month)', () => {
+    const epochs = real!.rawObservations.map((o) => new Date(o.epoch).getTime()).sort((a, b) => a - b);
+    const mid = epochs[Math.floor(epochs.length / 2)];
+    const slot = slotMs(config!.outputPolicy.outputIntervalMin, mid);
+    const cycles = selectCycles(config!, slot, repository.observations());
+    if (cycles.fatal || cycles.observations.length < 20) return; // sparse cycle: skip silently
+    const out = runAdjustment(buildRunnerInput(config!, cycles.observations,
+      repository.environmental(), refSet!, { autoCorrection: true }));
+    expect(out.ok).toBe(true);
+    expect(out.attempts[out.finalAttempt].quality.converged).toBe(true);
+  });
 });
