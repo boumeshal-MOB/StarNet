@@ -24,22 +24,38 @@ export function CreateProcessingWizard() {
   const goto = (i: number) => set({ step: i, maxReached: Math.max(draft.maxReached, i) });
 
   const stepValid = useMemo(() => validateStep(draft), [draft]);
+  const progress = Math.round(((draft.step + 1) / WIZARD_STEPS.length) * 100);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-lg font-bold">Create processing</h1>
-          <p className="text-xs text-slate-500">Topographic Adjustment - draft is saved automatically at every change.</p>
+    <div className="space-y-5 pb-20">
+      <div className="overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-brand-950 p-6 text-white shadow-lg">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="mb-2 text-2xs font-semibold uppercase tracking-[0.18em] text-brand-300">New topographic adjustment</div>
+            <h1 className="text-2xl font-bold tracking-tight">Create a processing</h1>
+            <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-300">
+              Configure the network, point identities, adjustment and execution policy. Technical settings remain available in Advanced options.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge tone="Success">Draft saved</Badge>
+            {draft.stationIds.length > 0 && <Badge>{draft.stationIds.length} station(s)</Badge>}
+            <Button variant="secondary" size="xs" onClick={() => setDraft(defaultDraft())}>Discard draft</Button>
+          </div>
         </div>
-        <Button variant="ghost" size="xs" onClick={() => setDraft(defaultDraft())}>Discard draft</Button>
+        <div className="mt-5 flex items-center gap-3">
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/10">
+            <div className="h-full rounded-full bg-brand-400 transition-all" style={{ width: `${progress}%` }} />
+          </div>
+          <span className="text-2xs font-medium text-slate-300">{progress}%</span>
+        </div>
       </div>
       {resumed && draft.step > 0 && (
         <Callout tone="info">Draft resumed from your previous session (auto-saved).</Callout>
       )}
       <Stepper steps={WIZARD_STEPS} current={draft.step} maxReached={draft.maxReached} onGoto={goto} />
 
-      <div className="max-w-6xl">
+      <div>
         {draft.step === 0 && <Step1 draft={draft} set={set} />}
         {draft.step === 1 && <Step2 draft={draft} set={set} />}
         {draft.step === 2 && <Step3 draft={draft} set={set} />}
@@ -52,7 +68,7 @@ export function CreateProcessingWizard() {
         {draft.step === 9 && <StepReview draft={draft} set={set} />}
       </div>
 
-      <div className="flex items-center gap-2 border-t border-slate-200 pt-4">
+      <div className="fixed bottom-0 left-60 right-0 z-20 flex items-center gap-2 border-t border-slate-200 bg-white/95 px-7 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.06)] backdrop-blur xl:px-9">
         <Button disabled={draft.step === 0} onClick={() => goto(draft.step - 1)}>← Back</Button>
         {draft.step < WIZARD_STEPS.length - 1 && (
           <Button variant="primary" disabled={!stepValid.ok}
@@ -64,7 +80,9 @@ export function CreateProcessingWizard() {
           </Button>
         )}
         {!stepValid.ok && <span className="text-2xs text-rose-600">{stepValid.reason}</span>}
-        <span className="ml-auto text-2xs text-slate-400">Step {draft.step + 1} / {WIZARD_STEPS.length}</span>
+        <span className="ml-auto text-2xs text-slate-500">
+          <strong className="text-slate-700">{WIZARD_STEPS[draft.step]}</strong> · Step {draft.step + 1} / {WIZARD_STEPS.length}
+        </span>
       </div>
     </div>
   );
@@ -105,16 +123,31 @@ function prepareNextStep(d: WizardDraft): WizardDraft {
       const refIds = isReal ? new Set(real?.referenceIds ?? []) : undefined;
       const { targets, setups, physicalPoints } = buildTargetsAndSetups(d.stationIds, refIds);
       const procId = 'wizard-tmp';
-      const refSets = repository.referenceSetsFromHeader(procId, 'wizard',
+      const importedRefSets = repository.referenceSetsFromHeader(procId, 'wizard',
         (id) => (isReal ? realPointIds.has(id) : id.startsWith('REF')));
       // default initialization window = first cycles of the selected stations
       const epochs = repository.observations()
         .filter((o) => d.stationIds.includes(o.stationId))
         .map((o) => new Date(o.epoch).getTime());
       const first = epochs.length ? Math.min(...epochs) : Date.now();
+      const localDatumSet = {
+        id: 'wizard-local-datum',
+        processingId: procId,
+        name: 'Local datum — fixed anchor only',
+        version: Math.max(0, ...importedRefSets.map((item) => item.version)) + 1,
+        points: [],
+        validFrom: new Date(first).toISOString(),
+        activeInVersion: false,
+        usedByRun: false,
+        createdAt: new Date().toISOString(),
+        createdBy: 'wizard',
+        comment: 'No external reference coordinates; datum fixed by the selected anchor station.',
+      };
+      const refSets = [...importedRefSets, localDatumSet];
       return {
         ...d, stations, targets, setups, physicalPoints, refSets,
-        selectedRefSetId: refSets[0]?.id ?? '',
+        selectedRefSetId: importedRefSets[0]?.id ?? localDatumSet.id,
+        initAnchorStationId: stations[0]?.id ?? '',
         provisional: [], provisionalSaved: false,
         initWindowFrom: new Date(first - 60000).toISOString().slice(0, 16),
         initWindowTo: new Date(first + 2 * 3600000).toISOString().slice(0, 16),
@@ -129,8 +162,11 @@ function Step1({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraf
   const { state } = useApp();
   const proj = repository.project();
   return (
-    <Card title="Step 1 - General Information">
-      <div className="grid grid-cols-2 gap-4">
+    <Card title="Step 1 - General information">
+      <Callout tone="info">
+        Start with the essential information. Templates pre-fill safe defaults; every specialised setting remains accessible later under <strong>Advanced options</strong>.
+      </Callout>
+      <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Field label="Processing type">
           <TextInput value="Topographic Adjustment" disabled />
         </Field>
@@ -152,10 +188,6 @@ function Step1({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraf
         <Field label="Country template" hint="Pre-fills units, thresholds, instrument and prism catalogs. Editable defaults, not national standards.">
           <Select value={draft.countryTemplateId} onChange={(v) => set({ countryTemplateId: v })}
             options={state.countryTemplates.map((c) => ({ value: c.id, label: c.name }))} />
-        </Field>
-        <Field label="Interface mode" hint="Standard shows the main parameters; Expert exposes weighting, centering and auto-correction details.">
-          <Select value={draft.mode} onChange={(v) => set({ mode: v as WizardDraft['mode'] })}
-            options={[{ value: 'standard', label: 'Standard mode' }, { value: 'expert', label: 'Expert mode' }]} />
         </Field>
         <Field label="Active after creation">
           <Toggle checked={draft.activeAfterCreation} onChange={(v) => set({ activeAfterCreation: v })}

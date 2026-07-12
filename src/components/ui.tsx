@@ -59,10 +59,10 @@ export function Button({
   title?: string;
   type?: 'button' | 'submit';
 }) {
-  const base = 'inline-flex items-center gap-1.5 rounded-md font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-brand-200 disabled:opacity-50 disabled:cursor-not-allowed';
+  const base = 'inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-all focus:outline-none focus:ring-2 focus:ring-brand-200 disabled:opacity-50 disabled:cursor-not-allowed';
   const variants = {
-    primary: 'bg-brand-600 text-white hover:bg-brand-700 shadow-sm',
-    secondary: 'bg-white text-slate-700 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 shadow-sm',
+    primary: 'bg-brand-600 text-white hover:bg-brand-700 shadow-sm hover:shadow',
+    secondary: 'bg-white text-slate-700 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 shadow-sm hover:ring-slate-400',
     danger: 'bg-white text-rose-600 ring-1 ring-inset ring-rose-200 hover:bg-rose-50 shadow-sm',
     ghost: 'text-brand-700 hover:bg-brand-50',
   };
@@ -80,15 +80,15 @@ export function Card({ title, children, actions, className }: {
   title?: React.ReactNode; children: React.ReactNode; actions?: React.ReactNode; className?: string;
 }) {
   return (
-    <div className={cls('rounded-lg bg-white shadow-sm ring-1 ring-slate-200', className)}>
+    <section className={cls('overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm', className)}>
       {(title || actions) && (
-        <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-2.5">
-          <h3 className="text-sm font-semibold text-slate-700">{title}</h3>
+        <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/60 px-5 py-3">
+          <h3 className="text-sm font-semibold tracking-tight text-slate-800">{title}</h3>
           <div className="flex items-center gap-2">{actions}</div>
         </div>
       )}
-      <div className="p-4">{children}</div>
-    </div>
+      <div className="p-5">{children}</div>
+    </section>
   );
 }
 
@@ -229,18 +229,21 @@ export function Stepper({ steps, current, onGoto, maxReached }: {
   steps: string[]; current: number; onGoto: (i: number) => void; maxReached: number;
 }) {
   return (
-    <ol className="flex flex-wrap gap-1">
+    <ol className="grid grid-cols-2 gap-2 sm:grid-cols-5 xl:grid-cols-10">
       {steps.map((s, i) => (
         <li key={s}>
           <button onClick={() => i <= maxReached && onGoto(i)}
             disabled={i > maxReached}
-            className={cls('flex items-center gap-1.5 rounded-md px-2 py-1 text-2xs font-medium',
-              i === current ? 'bg-brand-600 text-white'
-                : i <= maxReached ? 'bg-brand-50 text-brand-700 hover:bg-brand-100'
-                  : 'bg-slate-100 text-slate-400 cursor-not-allowed')}>
-            <span className={cls('flex h-4 w-4 items-center justify-center rounded-full text-2xs',
-              i === current ? 'bg-white/25' : 'bg-white')}>{i + 1}</span>
-            {s}
+            className={cls('flex h-full w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-2xs font-medium transition-all',
+              i === current ? 'border-brand-600 bg-brand-600 text-white shadow-sm'
+                : i <= maxReached ? 'border-brand-100 bg-white text-brand-700 hover:border-brand-300 hover:bg-brand-50'
+                  : 'cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400')}>
+            <span className={cls('flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-2xs font-bold',
+              i === current ? 'bg-white/20 text-white'
+                : i < current ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500')}>
+              {i < current ? '✓' : i + 1}
+            </span>
+            <span className="leading-tight">{s}</span>
           </button>
         </li>
       ))}

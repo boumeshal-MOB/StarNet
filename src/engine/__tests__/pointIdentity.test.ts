@@ -7,7 +7,7 @@ import { buildRunnerInput, selectCycles } from '../../store/runExecution';
 import { runAdjustment } from '../runner';
 import {
   buildResolvedMapping, confirmDistinct, linkAsSamePoint, networkConnectivity,
-  resolveEngineName, unlinkPrism, validatePointMapping,
+  resolveEngineName, targetSourceKey, unlinkPrism, validatePointMapping,
 } from '../pointIdentity';
 import type { ConfigurationVersion } from '../../types/domain';
 
@@ -54,6 +54,11 @@ describe('scenario "same field name, different points" (MPO001)', () => {
     expect(new Set(engineNames).size).toBe(2);                          // two engine ids
   });
 
+  it('uses station + raw name as the source identity', () => {
+    const prisms = config.targets.filter((t) => t.rawName === 'MPO001');
+    expect(new Set(prisms.map((t) => targetSourceKey(t.stationIds[0], t.rawName))).size).toBe(2);
+  });
+
   it('adjusts them as two separate coordinates', () => {
     const slot = Date.UTC(2026, 6, 8, 12, 0, 0);
     const cycles = selectCycles(config, slot, repository.observations());
@@ -66,6 +71,33 @@ describe('scenario "same field name, different points" (MPO001)', () => {
     expect(mp07).toBeDefined();
     const d = Math.hypot(mp03!.easting - mp07!.easting, mp03!.northing - mp07!.northing);
     expect(d).toBeGreaterThan(50); // genuinely different physical locations
+  });
+});
+
+describe('mapping integrity validation', () => {
+  it('blocks a dangling target-to-physical-point link', () => {
+    const clone: ConfigurationVersion = JSON.parse(JSON.stringify(config));
+    clone.targets[0].physicalPointId = 'missing-point';
+    expect(validatePointMapping(clone).some((issue) =>
+      issue.level === 'blocking' && issue.message.includes('missing physical point'))).toBe(true);
+  });
+
+  it('blocks a non-reciprocal physical-point link', () => {
+    const clone: ConfigurationVersion = JSON.parse(JSON.stringify(config));
+    const target = clone.targets[0];
+    const point = clone.physicalPoints.find((p) => p.id === target.physicalPointId)!;
+    point.btmPrismIds = point.btmPrismIds.filter((id) => id !== target.btmPrismId);
+    expect(validatePointMapping(clone).some((issue) =>
+      issue.level === 'blocking' && issue.message.includes('does not contain'))).toBe(true);
+  });
+
+  it('blocks one output name assigned to different physical points', () => {
+    const clone: ConfigurationVersion = JSON.parse(JSON.stringify(config));
+    const distinct = clone.targets.filter((target, index, all) =>
+      all.findIndex((other) => other.physicalPointId === target.physicalPointId) === index).slice(0, 2);
+    distinct.forEach((target) => { target.publishOutput = true; target.outputName = 'DUPLICATE_OUTPUT'; });
+    expect(validatePointMapping(clone).some((issue) =>
+      issue.level === 'blocking' && issue.message.includes('DUPLICATE_OUTPUT'))).toBe(true);
   });
 });
 

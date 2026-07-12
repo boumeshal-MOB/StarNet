@@ -13,7 +13,7 @@ Aucun backend, aucun Star*Net, aucun import de fichier dans le parcours utilisat
 ```bash
 npm install
 npm run dev          # http://localhost:5173
-npm test             # 39 tests : corrections, χ², QR/covariance, identité des points, moteur (synthétique + données réelles)
+npm test             # 49 tests : corrections, χ², QR/covariance, identité, timeline, initialisation réseau et moteur
 npm run build        # build production (tsc + vite)
 ```
 
@@ -57,9 +57,15 @@ vérifiés par les tests et affichés sur `/#/dev/fixture`.
 Chaque prisme BTM (par station) est lié à un **point physique versionné** : distincts par
 défaut, jamais fusionnés sur un simple nom identique (démo `MPO001` intégrée), liaisons
 explicites/datées/justifiées, suggestions par proximité avec confiance, contrôles bloquants
-avant run (collisions d'identifiant moteur, connectivité du réseau), snapshot du mapping
-résolu dans chaque run. Onglet **Point Identity** dans l'administration + panneau à l'étape 4
+avant run (liens réciproques, collisions d'identifiant moteur et de sortie, connectivité du réseau),
+snapshot du mapping résolu dans chaque run et distribution d'une coordonnée partagée vers
+chaque prisme BTM lié. Onglet **Point Identity** dans l'administration + panneau à l'étape 4
 du wizard. Détails : [`docs/context/06-physical-points.md`](docs/context/06-physical-points.md).
+
+L'étape **Initial Coordinates** accepte aussi un repère local : une station et son orientation
+sont fixées, puis les autres stations sont résectionnées dès que deux points physiques communs
+confirmés sont disponibles. Les périodes historiques utilisent la fréquence de sortie de chaque
+version de configuration et les chevauchements de validité sont bloqués.
 
 ## Documentation
 
