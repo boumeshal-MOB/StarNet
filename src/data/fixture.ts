@@ -363,21 +363,21 @@ export function generateAts34Fixture(seed = 20260711): Ats34Fixture {
     mkPrism('prism-pav-fr', 'PAV FR (0.0 mm)', 0, 'PAV prism', {
       instrumentProfileId: 'inst-topcon-ms05axii', edmMode: 'Fine + Prism', manufacturer: 'Topcon',
     }),
-    mkPrism('prism-rob-0', 'Rob legacy · 0.0 mm', 0, 'Lookup reflector', {
-      country: 'United Kingdom', instrumentProfileId: 'inst-topcon-ms05axii', edmMode: 'Fine + Prism', manufacturer: 'Topcon',
-      notes: 'Constant from the Rob ATS34 lookup table; reflector model was not supplied.',
+    mkPrism('prism-uk-leica-circular-0', 'Leica circular prism (0.0 mm)', 0, 'Leica circular prism', {
+      country: 'United Kingdom', instrumentProfileId: 'inst-tm50', edmMode: 'Precise + Reflector', manufacturer: 'Leica',
+      notes: 'Supplied UK Lookup note: +0.0 mm for Leica Circular Prism.',
     }),
-    mkPrism('prism-rob-89', 'Rob legacy · +8.9 mm', 0.0089, 'L-bar', {
-      country: 'United Kingdom', instrumentProfileId: 'inst-topcon-ms05axii', edmMode: 'Fine + Prism', manufacturer: 'Topcon',
-      notes: 'Constant documented by Rob for L-bar targets in the ATS34 lookup workbook.',
+    mkPrism('prism-uk-lbar-89', 'L-bar (+8.9 mm)', 0.0089, 'L-bar', {
+      country: 'United Kingdom', instrumentProfileId: 'inst-tm50', edmMode: 'Precise + Reflector', manufacturer: 'Leica',
+      notes: 'Supplied UK Lookup note: +8.9 mm for L-bar.',
     }),
-    mkPrism('prism-rob-265', 'Rob legacy · +26.5 mm', 0.0265, 'Micro prism', {
-      country: 'United Kingdom', instrumentProfileId: 'inst-topcon-ms05axii', edmMode: 'Fine + Prism', manufacturer: 'Topcon',
-      notes: 'Constant documented by Rob for Micro Prism targets in the ATS34 lookup workbook.',
+    mkPrism('prism-uk-micro-265', 'Micro prism (+26.5 mm)', 0.0265, 'Micro prism', {
+      country: 'United Kingdom', instrumentProfileId: 'inst-tm50', edmMode: 'Precise + Reflector', manufacturer: 'Leica',
+      notes: 'Supplied UK Lookup note: +26.5 mm for Micro Prism.',
     }),
-    mkPrism('prism-rob-30', 'Rob legacy · +30.0 mm', 0.0300, '360 mini', {
-      country: 'United Kingdom', instrumentProfileId: 'inst-topcon-ms05axii', edmMode: 'Fine + Prism', manufacturer: 'Topcon',
-      notes: 'Constant documented by Rob for 360 mini targets in the ATS34 lookup workbook.',
+    mkPrism('prism-uk-360mini-30', '360 mini prism (+30.0 mm)', 0.0300, '360 mini prism', {
+      country: 'United Kingdom', instrumentProfileId: 'inst-tm50', edmMode: 'Precise + Reflector', manufacturer: 'Leica',
+      notes: 'Supplied UK Lookup note: +30.0 mm for 360 mini.',
     }),
   ];
 

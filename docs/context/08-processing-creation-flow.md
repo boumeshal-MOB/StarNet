@@ -22,10 +22,9 @@ flowchart TD
     A["1. General"] --> B["2. Stations"]
     B --> C["3. Instruments"]
     C --> D["4. Targets & measurement setups"]
-    D --> E["5. Network identity & references"]
-    E --> F["6. Initial coordinates"]
-    F --> G["7. Adjustment"]
-    G --> H["8-10. Run, Output, Review"]
+    D --> E["5. Initialisation"]
+    E --> F["6. Adjustment"]
+    F --> G["7-9. Run, Output, Review"]
 ```
 
 ## Étape 1 — General
@@ -98,10 +97,15 @@ les groupes homogènes ; les exceptions restent éditables individuellement.
 Les cibles observées par une seule station ou explicitement distinctes restent dans le tableau
 normal. Leur identifiant physique interne n'est pas affiché dans le parcours compact.
 
-## Étape 5 — Network identity & References
+### 4.4 Identité réseau
+
+La maquette ne déduit jamais un point commun depuis `TargetName` ou `AdjustmentName`. Pour un
+nouveau réseau, toutes les cibles des différentes stations restent distinctes. Un mapping peut
+être réutilisé automatiquement uniquement s'il s'agit d'un mapping physique versionné et déjà
+validé pour les stations et la période concernées.
 
 Pour un processing mono-station, la partie points communs est sautée. L'utilisateur passe
-directement aux références et au datum.
+directement à l'initialisation.
 
 Pour un réseau multi-stations, l'écran contient trois blocs distincts.
 
@@ -113,7 +117,7 @@ en cours de validation. Les autres cibles ne polluent pas cette vue.
 Sources possibles :
 
 - mapping versionné réutilisé ;
-- mapping explicite importé ;
+- mapping physique explicite importé, jamais un simple nom Lookup ;
 - correspondances manuelles ;
 - suggestions géométriques après initialisation manuelle.
 
@@ -159,13 +163,18 @@ Une matrice ou un graphe synthétique affiche les connexions :
 Le simple fait que le graphe soit connecté ne garantit pas l'observabilité. Un contrôle de rang
 reste obligatoire avant l'ajustement.
 
-### Références
+## Étape 5 — Initialisation
 
-Les références sont attachées au `PhysicalPoint`, jamais seulement au nom source d'une cible.
-L'utilisateur choisit un Reference Set versionné, contrôle les coordonnées/sigmas par composante
-et visualise les changements de période.
+Cette étape rassemble le datum et le calcul des coordonnées initiales. L'utilisateur choisit une
+seule des deux méthodes :
 
-## Étape 6 — Initial Coordinates
+1. `Use known reference coordinates` : sélectionner un Reference Set, ajouter si nécessaire des
+   cibles de référence, puis saisir ou modifier E/N/H et les contraintes/sigmas par composante ;
+2. `No coordinates — fix one station` : choisir la station ancre et saisir E/N/H/orientation ;
+   `0 / 0 / 0 / 0` est autorisé pour un repère local.
+
+Il n'est jamais demandé de choisir un jeu vide de références puis de comprendre les alertes d'un
+datum global. Les contrôles de références ne sont affichés que pour la première méthode.
 
 Après validation de l'identité :
 
@@ -182,7 +191,7 @@ Après validation de l'identité :
 Les échecs sont explicites : orientation indéterminée, composante déconnectée, points communs
 alignés, ambiguïté de transformation ou résidus supérieurs aux tolérances.
 
-## Étape 7 — Adjustment
+## Étape 6 — Adjustment
 
 Le template d'ajustement propose les poids et contrôles standards. Les options avancées donnent
 accès aux paramètres complets, au χ², à l'autocorrection, aux erreurs de centrage et aux seuils.
@@ -192,7 +201,7 @@ unique mode EDM de station.
 
 Un test manuel permet d'exécuter une époque avant sauvegarde définitive.
 
-## Étape 8 — Run & Synchronization
+## Étape 7 — Run & Synchronization
 
 L'utilisateur choisit :
 
@@ -206,7 +215,7 @@ L'utilisateur choisit :
 L'époque reste le timestamp source de chaque station. Cette étape ne modifie pas l'identité des
 points ni les coordonnées initiales.
 
-## Étape 9 — Output
+## Étape 8 — Output
 
 L'utilisateur choisit les coordonnées, déplacements, incertitudes et indicateurs qualité à
 publier. Le timestamp de publication est aligné sur la grille demandée, par exemple `00/30`,
@@ -216,7 +225,7 @@ Un résultat moteur est remappé par :
 
 `engineName → PhysicalPoint → cible(s) BTM → sorties BTM`.
 
-## Étape 10 — Review & Create
+## Étape 9 — Review & Create
 
 La revue affiche en priorité :
 

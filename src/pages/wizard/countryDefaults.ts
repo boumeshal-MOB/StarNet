@@ -7,7 +7,7 @@ export function countryPresetSummary(template: CountryTemplate): string {
     return 'Topcon MS05AXII + MPO FR: +25.5 mm is already in the stored distance; BTM applies 0.0 mm. Atmosphere is also considered corrected.';
   }
   if (template.id === 'country-uk') {
-    return 'Rob / legacy: raw distances, 0 mm already applied, prism constants 0 / +8.9 / +26.5 / +30.0 mm, cycle T/P.';
+    return 'Leica UK setup: raw slope distances recorded with 0 mm field constant; apply 0 / +8.9 / +26.5 / +30.0 mm per target, using cycle T/P.';
   }
   return 'Raw distances: prism correction comes from each target setup and atmosphere uses cycle T/P when available.';
 }

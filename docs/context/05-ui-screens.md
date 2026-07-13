@@ -3,7 +3,7 @@
 | Route | Écran | Contenu clé |
 |---|---|---|
 | `/` | Processings | liste complète (type, site, stations, version active, statut, dernier/prochain run, qualité, sorties provisoires) + actions Open / Run now / Activate-Deactivate / Duplicate / Archive |
-| `/create` | Assistant 10 étapes | General → Stations → Instruments → Targets & Measurement Setups → Network identity & References → Initial Coordinates → Adjustment (Standard/Expert avec recherche) → Run → Output → Review/Test/Create ; brouillon auto-sauvé (localStorage) ; test d'ajustement réel non persisté |
+| `/create` | Assistant 9 étapes | General → Stations → Instruments → Targets & Measurement Setups + identité réseau → Initialisation (références connues ou station ancre, puis calcul) → Adjustment → Run → Output → Review/Test/Create ; brouillon auto-sauvé (localStorage) ; test d'ajustement réel non persisté |
 | `/administration` | Administration | même liste, orientée ouverture des processings |
 | `/processings/:id` | Admin processing | onglets Overview, Configurations (timeline, lifecycle, compare/diff), Stations & Instruments, Targets & Prisms, Reference Sets, Initial Coordinates, Adjustment Settings (édition → nouvelle version), Run & Synchronization, Output Variables, Runs & Results (versions par slot, catch-up, promote), Audit Log |
 | `/processings/:id/reprocess` + `/reprocess` | Reprocessing historique | plage, stratégie par-slot/forcée, dry-run/publish, aperçu (slots, config par sous-période, gaps, résultats remplacés), comparaison old→new |

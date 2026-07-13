@@ -93,14 +93,15 @@ Chaque exception reçoit son propre Measurement Setup.
 
 ## 4. Preset Royaume-Uni
 
-Le comportement présenté par Rob et StarAdjust legacy est la source métier interne du template
-UK, mais `Rob` n'est ni un nom de template visible ni une nomenclature de point.
-
 Valeurs initiales :
 
+- instrument proposé : Leica TM50 I ;
 - distances inclinées brutes ;
 - constante déjà appliquée : `0,0 mm` ;
-- constantes Lookup : `0 / +8,9 / +26,5 / +30,0 mm` ;
+- Leica Circular Prism : `0,0 mm` ;
+- L-bar : `+8,9 mm` ;
+- Micro Prism : `+26,5 mm` ;
+- 360 mini : `+30,0 mm` ;
 - correction atmosphérique avec T/P du cycle lorsque disponibles ;
 - noms source et `AdjustmentName` issus de la Lookup Table UK, par exemple `360_301_34` ou
   `L_ANL1100_329` ;

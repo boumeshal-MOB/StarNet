@@ -167,15 +167,13 @@ configuration de mesure distincte.
 
 ### Royaume-Uni (UK)
 
+- instrument proposé : Leica TM50 I ;
 - distances inclinées brutes ;
 - constante déjà appliquée `0,0 mm` ;
-- constantes de lookup disponibles : `0 / +8,9 / +26,5 / +30,0 mm` ;
+- configurations proposées d'après la note Lookup fournie : Leica Circular Prism `0,0 mm`,
+  L-bar `+8,9 mm`, Micro Prism `+26,5 mm`, 360 mini `+30,0 mm` ;
 - correction atmosphérique calculée avec T/P du cycle lorsqu'elles sont disponibles ;
 - chaque cible conserve sa configuration issue de la Lookup Table.
-
-Le comportement présenté par Rob et le fonctionnement StarAdjust legacy constituent la
-source métier interne de ce template UK. `Rob` ne doit pas apparaître comme nom de template
-ou comme préfixe dans la nomenclature des points.
 
 ## 6. Exemple France d'un cycle mixte
 
@@ -214,9 +212,8 @@ Règles principales :
   l'identité depuis le texte du nom.
 
 Pour le template France, les noms `MPO...` proviennent donc de la base France. Pour le
-template UK, les noms proviennent de la Lookup Table UK/legacy, par exemple `360_301_34` ou
-`L_ANL1100_329`. « Rob » reste une source métier interne du template UK et ne constitue pas
-une nomenclature affichée ou envoyée à STAR*NET.
+template UK, les noms proviennent de la Lookup Table fournie, par exemple `360_301_34` ou
+`L_ANL1100_329`.
 
 Les règles complètes et les exemples de mapping `.DAT` sont définis dans
 [`06-physical-points.md`](06-physical-points.md).
@@ -291,8 +288,7 @@ introduire les configurations de mesure par cible et brancher leurs poids dans l
 
 ## 12. Références fonctionnelles
 
-- classeur Rob `ATS34 Raw Data, Lookup, Header` et fonctionnement StarAdjust legacy fourni au
-  projet ;
+- classeur `ATS34 Raw Data, Lookup, Header` et note Lookup fournis au projet ;
 - manuel STAR*NET fourni : pondération des distances par partie constante et ppm, avec
   possibilité de schémas de pondération instrument ;
 - documentation constructeur Topcon MS AXII : caractéristiques différentes pour prisme,

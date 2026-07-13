@@ -167,7 +167,7 @@ export function StepOutput({ draft, set }: { draft: WizardDraft; set: (p: Partia
   );
 }
 
-// ============================================================ Step 10 ======
+// ============================================================= Review ======
 export function StepReview({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraft>) => void }) {
   const { state, actions } = useApp();
   const nav = useNavigate();
@@ -274,13 +274,14 @@ export function StepReview({ draft, set }: { draft: WizardDraft; set: (p: Partia
 
   return (
     <div className="space-y-4">
-      <Card title="Step 10 - Review, Test and Create">
+      <Card title="Step 9 - Review, Test and Create">
         <div className="grid grid-cols-2 gap-6">
           <KV items={[
             ['Name', draft.name || '-'],
             ['Network', `${draft.networkKind} (${draft.stationIds.join(', ')})`],
             ['Targets', `${draft.targets.length} mapped / ${draft.targets.filter((t) => t.includeInAdjustment).length} included`],
-            ['References', draft.refSets.find((r) => r.id === draft.selectedRefSetId)?.name ?? '-'],
+            ['Datum', draft.initMode === 'local-anchor' ? `Fixed station ${draft.initAnchorStationId}`
+              : draft.refSets.find((r) => r.id === draft.selectedRefSetId)?.name ?? '-'],
             ['Provisional coordinates', `${draft.provisional.length} target(s) ${draft.provisionalSaved ? '(saved)' : '(NOT saved)'}`],
             ['Templates', `${draft.countryTemplateId} / ${draft.adjustment.name}`],
             ['Overrides', String(draft.targets.filter((t) => t.source === 'manual-override').length)],

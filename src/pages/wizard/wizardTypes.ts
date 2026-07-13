@@ -7,8 +7,8 @@ import type { StationOrientation } from '../../engine/initial';
 import { FIXTURE_START } from '../../data/fixture';
 
 export const WIZARD_STEPS = [
-  'General', 'Stations', 'Instruments', 'Targets & Measurements', 'References',
-  'Initial Coordinates', 'Adjustment', 'Run', 'Output', 'Review & Create',
+  'General', 'Stations', 'Instruments', 'Targets & Measurements', 'Initialisation',
+  'Adjustment', 'Run', 'Output', 'Review & Create',
 ];
 
 export interface WizardDraft {
@@ -91,7 +91,11 @@ const KEY = 'btm-wizard-draft-v1';
 export function loadDraft(): WizardDraft | null {
   try {
     const raw = localStorage.getItem(KEY);
-    return raw ? { ...defaultDraft(), ...JSON.parse(raw) } : null;
+    if (!raw) return null;
+    const loaded = { ...defaultDraft(), ...JSON.parse(raw) } as WizardDraft;
+    loaded.step = Math.min(loaded.step, WIZARD_STEPS.length - 1);
+    loaded.maxReached = Math.min(loaded.maxReached, WIZARD_STEPS.length - 1);
+    return loaded;
   } catch { return null; }
 }
 

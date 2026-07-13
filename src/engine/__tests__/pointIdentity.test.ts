@@ -1,7 +1,7 @@
 // Physical point mapping: identity resolution, default-distinct rule,
 // linking scenarios, connectivity and pre-run validation.
 import { describe, expect, it } from 'vitest';
-import { seedDemo } from '../../store/seed';
+import { buildTargetsAndSetups, seedDemo } from '../../store/seed';
 import { repository } from '../../data/repository';
 import { buildRunnerInput, selectCycles } from '../../store/runExecution';
 import { runAdjustment } from '../runner';
@@ -15,6 +15,16 @@ const seed = seedDemo();
 const config = seed.configVersions.find((c) => c.id === 'proc-nte-ats34-v1')!;
 const refSet = seed.referenceSets.find((r) => r.id === config.referenceSetId)!;
 
+describe('new-processing default identity', () => {
+  it('does not infer common points from identical AdjustmentName values', () => {
+    const built = buildTargetsAndSetups(['ATS34', 'ATS35']);
+    const ref02 = built.targets.filter((target) => target.adjustmentName === 'REF02');
+    expect(ref02).toHaveLength(2);
+    expect(new Set(ref02.map((target) => target.physicalPointId)).size).toBe(2);
+    expect(built.physicalPoints.every((point) => point.btmPrismIds.length === 1)).toBe(true);
+  });
+});
+
 describe('scenario "different names, same point"', () => {
   it('MP01 prisms (MP01_34 / MP01_36) share one physical point and one engine id', () => {
     const prisms = config.targets.filter((t) => t.adjustmentName === 'MP01');
@@ -25,7 +35,7 @@ describe('scenario "different names, same point"', () => {
     expect(new Set(engineNames).size).toBe(1);
     const pp = config.physicalPoints.find((p) => p.id === prisms[0].physicalPointId)!;
     expect(pp.state).toBe('shared');
-    expect(pp.source).toBe('import'); // business id from the BTM lookup import
+    expect(pp.source).toBe('existing'); // explicit mapping in the configured demo processing
   });
 
   it('the network produces ONE adjusted coordinate while residuals stay per station', () => {

@@ -11,7 +11,7 @@ import { fmtArcSec, fmtM, fmtMm } from '../../lib/format';
 import type { AdjustmentTemplate, CorrectionTrace } from '../../types/domain';
 import { NetworkView } from '../../components/NetworkView';
 
-// ============================================================ Step 6 =======
+// ===================================================== Initialisation =======
 export function StepInitial({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraft>) => void }) {
   const [computed, setComputed] = useState(draft.provisional.length > 0);
   const anchorId = draft.initAnchorStationId || draft.stationIds[0] || '';
@@ -93,18 +93,11 @@ export function StepInitial({ draft, set }: { draft: WizardDraft; set: (p: Parti
 
   return (
     <div className="space-y-4">
-      <Card title="Step 6 - Initial Coordinates"
+      <Card title="Calculate initial coordinates"
         actions={
           <Button variant="primary" size="xs" onClick={compute}>Compute initial coordinates</Button>
         }>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <Field label="Initialization method">
-            <Select value={draft.initMode} onChange={(value) => set({ initMode: value as WizardDraft['initMode'], provisionalSaved: false })}
-              options={[
-                { value: 'known-references', label: 'Known reference coordinates' },
-                { value: 'local-anchor', label: 'Local datum — fix one station' },
-              ]} />
-          </Field>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <Field label="Representative period from" hint="Cycle(s) used for the initialization.">
             <TextInput type="datetime-local" value={draft.initWindowFrom}
               onChange={(e) => set({ initWindowFrom: e.target.value })} />
@@ -142,7 +135,7 @@ export function StepInitial({ draft, set }: { draft: WizardDraft; set: (p: Parti
 
       {computed && (
         <>
-          <Card title="Station orientations (from references)">
+          <Card title={draft.initMode === 'local-anchor' ? 'Station placement from the fixed anchor' : 'Station orientations from references'}>
             <TableWrap maxH="max-h-44">
               <thead><tr><th>Station</th><th>Source</th><th>Coordinates</th><th>Orientation</th><th>Control points</th><th>Spread</th><th>Problems</th></tr></thead>
               <tbody>
@@ -171,7 +164,7 @@ export function StepInitial({ draft, set }: { draft: WizardDraft; set: (p: Parti
             {draft.provisionalSaved && (
               <Callout tone="success">Provisional coordinates saved into the draft configuration.
                 They remain adjustable - promoting a point to a constrained reference is a separate,
-                protected action in the References tab.</Callout>
+                protected action in the Initialisation datum section.</Callout>
             )}
             <TableWrap maxH="max-h-80">
               <thead>
