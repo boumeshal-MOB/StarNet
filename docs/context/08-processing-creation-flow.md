@@ -220,6 +220,17 @@ alignés, ambiguïté de transformation ou résidus supérieurs aux tolérances.
 Le template d'ajustement propose les poids et contrôles standards. Les options avancées donnent
 accès aux paramètres complets, au χ², à l'autocorrection, aux erreurs de centrage et aux seuils.
 
+La vue compacte affiche le template et sa provenance, dimension, système, unité angulaire,
+itérations, χ², confiance, propagation et résumé d'autocorrection. La convergence porte le
+libellé et l'unité propres au moteur. Les options avancées contiennent réfraction/rayon,
+pondérations, centrage et paramètres spécifiques au moteur.
+
+Le preset UK reprend le projet STAR*NET HS2/NTE fourni. Le preset France conserve la source
+CoMeT et n'applique que les traductions démontrées. Une fonction non disponible, comme Huber ou
+VCE Helmert, apparaît `Non transposé` plutôt que d'être remplacée silencieusement par une option
+au nom voisin. Les règles complètes figurent dans
+[`10-adjustment-template-mapping.md`](10-adjustment-template-mapping.md).
+
 Les poids distance utilisés proviennent de chaque configuration de mesure résolue, pas d'un
 unique mode EDM de station.
 

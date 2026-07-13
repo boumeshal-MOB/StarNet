@@ -66,6 +66,11 @@ cibles de la même station.
 Contient dimension, projection, convergence, pondération, χ², confiance, erreurs de centrage,
 autocorrection et seuils de publication. Les options avancées restent toujours accessibles.
 
+Un Adjustment Template porte aussi une provenance moteur. Une convergence STAR*NET, un critère
+CoMeT et un seuil de déplacement du moteur local sont trois sémantiques distinctes, même si les
+interfaces historiques utilisent le mot « convergence ». Les valeurs et règles détaillées sont
+définies dans [`10-adjustment-template-mapping.md`](10-adjustment-template-mapping.md).
+
 ### Run template
 
 Contient déclenchement, synchronisation, réutilisation, données tardives, catch-up et limites de
@@ -91,6 +96,12 @@ Valeurs initiales actuellement retenues :
 Une station française peut néanmoins mélanger MPO, autre prisme, feuille et laser sans prisme.
 Chaque exception reçoit son propre Measurement Setup.
 
+Le fichier CoMeT fourni propose en plus un ajustement `3D_LOCALE`, mètres, angles en gons,
+30 itérations, validation à 95 %, Huber 2.0 et VCE Helmert (5 itérations). Seuls les paramètres
+ayant un équivalent démontré sont appliqués au moteur cible. Huber, Helmert et le critère de
+convergence CoMeT ne sont jamais assimilés silencieusement à l'autocorrection ou à la convergence
+STAR*NET.
+
 ## 4. Preset Royaume-Uni
 
 Valeurs initiales :
@@ -106,6 +117,22 @@ Valeurs initiales :
 - noms source et `AdjustmentName` issus de la Lookup Table UK, par exemple `360_301_34` ou
   `L_ANL1100_329` ;
 - aucune génération de nom `MPO...`.
+
+Le template d'ajustement associé au projet fourni est nommé
+`UK — STAR*NET legacy (HS2/NTE)` et propose : 3D local, mètres, sortie DMS, ordre EN,
+Slope/Zenith, convergence STAR*NET 0.01 sans unité, 10 itérations, χ² 5 %, confiance 95 %,
+propagation activée, réfraction 0.07 et rayon 6 372 000 m.
+
+Ses poids projet sont 1 mm + 1 ppm, angle 1.414″, direction 2.5″, azimut 1″, zénith 1.5″,
+centrage instrument/cible 0.8 mm et vertical 0.5 mm. Ils sont des fallbacks de projet ; une
+configuration `station × cible` explicite reste prioritaire.
+
+L'Auto Adjust du `.snproj` associé utilise un résidu standardisé maximal de 3.0, retire une
+observation par itération et autorise 20 itérations. Ces 20 itérations ne remplacent pas les
+10 itérations maximales de la solution.
+
+Le nom « UK » reste un raccourci de sélection. Ces valeurs viennent du projet HS2/NTE fourni et
+ne constituent pas une norme nationale.
 
 ## 5. Priorité de résolution
 
