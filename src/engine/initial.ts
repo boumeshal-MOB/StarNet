@@ -41,6 +41,8 @@ export interface InitialComputationInput {
   targetHeights: Map<string, number>;
   /** engine names of points treated as known references */
   referenceIds: Set<string>;
+  /** station|rawTarget keys expected in the initialization sample */
+  expectedObservationKeys?: Set<string>;
   /** optional station orientations fixed only for network initialization */
   fixedOrientations?: Map<string, number>;
   epochFrom: string;
@@ -51,6 +53,58 @@ export interface InitialComputationResult {
   orientations: StationOrientation[];
   provisional: ProvisionalCoordinate[];
   failures: { targetId: string; reason: string }[];
+  coverage: InitialCoverage;
+}
+
+export interface InitialCoverage {
+  observationsUsed: number;
+  representativeObservations: number;
+  expectedStationTargets: number;
+  availableStationTargets: number;
+  stationTargetCoveragePercent: number;
+  expectedPhysicalPoints: number;
+  availablePhysicalPoints: number;
+  physicalPointCoveragePercent: number;
+  missingStationTargets: string[];
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) return NaN;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function circularMedianDeg(values: number[]): number {
+  if (values.length === 0) return NaN;
+  const radians = values.map((value) => value * DEG2RAD);
+  const centre = circularMean(radians) ?? radians[0];
+  const unwrapped = radians.map((value) => centre + wrapPi(value - centre));
+  const result = median(unwrapped) * 180 / Math.PI;
+  return ((result % 360) + 360) % 360;
+}
+
+export function initializationCoverage(
+  observations: RawObservation[], expectedKeys: Set<string>, nameMap: Map<string, string>,
+): InitialCoverage {
+  const availableKeys = new Set(observations.map((observation) =>
+    `${observation.stationId}|${observation.rawTargetName}`));
+  const expectedPoints = new Set([...expectedKeys].map((key) => nameMap.get(key) ?? key));
+  const availablePoints = new Set([...availableKeys]
+    .filter((key) => expectedKeys.has(key)).map((key) => nameMap.get(key) ?? key));
+  const availableStationTargets = [...expectedKeys].filter((key) => availableKeys.has(key)).length;
+  const pct = (available: number, expected: number) => expected > 0 ? 100 * available / expected : 0;
+  return {
+    observationsUsed: observations.length,
+    representativeObservations: availableStationTargets,
+    expectedStationTargets: expectedKeys.size,
+    availableStationTargets,
+    stationTargetCoveragePercent: pct(availableStationTargets, expectedKeys.size),
+    expectedPhysicalPoints: expectedPoints.size,
+    availablePhysicalPoints: availablePoints.size,
+    physicalPointCoveragePercent: pct(availablePoints.size, expectedPoints.size),
+    missingStationTargets: [...expectedKeys].filter((key) => !availableKeys.has(key)),
+  };
 }
 
 export function computeInitialCoordinates(input: InitialComputationInput): InitialComputationResult {
@@ -61,14 +115,34 @@ export function computeInitialCoordinates(input: InitialComputationInput): Initi
   const stationById = new Map(stations.map((s) => [s.id, s]));
   const stationCoordinates = new Map(stations.map((s) => [s.id, { e: s.approxE, n: s.approxN, h: s.approxH }]));
 
-  // group observations by station, keep latest per (station, target) in period
-  const byStationTarget = new Map<string, RawObservation>();
+  // Group the complete selected sample, then create one robust representative
+  // observation per station-target from component-wise medians. The selected
+  // period is source provenance only; it never defines configuration validity.
+  const grouped = new Map<string, RawObservation[]>();
   for (const o of observations) {
     const adjName = nameMap.get(`${o.stationId}|${o.rawTargetName}`) ?? o.rawTargetName;
     const key = `${o.stationId}|${adjName}`;
-    const prev = byStationTarget.get(key);
-    if (!prev || new Date(o.epoch) > new Date(prev.epoch)) byStationTarget.set(key, o);
+    grouped.set(key, [...(grouped.get(key) ?? []), o]);
   }
+  interface Representative { obs: RawObservation; correctedDistanceM: number; nSource: number }
+  const byStationTarget = new Map<string, Representative>();
+  for (const [key, source] of grouped) {
+    const middleEpoch = new Date(median(source.map((observation) => Date.parse(observation.epoch)))).toISOString();
+    const template = source[Math.floor(source.length / 2)];
+    byStationTarget.set(key, {
+      obs: {
+        ...template, id: `initial-median:${key}`, epoch: middleEpoch,
+        hzDeg: circularMedianDeg(source.map((observation) => observation.hzDeg)),
+        vzDeg: median(source.map((observation) => observation.vzDeg)),
+        sdM: median(source.map((observation) => observation.sdM)),
+      },
+      correctedDistanceM: median(source.map((observation) =>
+        corrections.get(observation.id)?.finalDistanceM ?? observation.sdM)),
+      nSource: source.length,
+    });
+  }
+  const expectedKeys = input.expectedObservationKeys ?? new Set(nameMap.keys());
+  const coverage = initializationCoverage(observations, expectedKeys, nameMap);
 
   // --- station orientations from references
   const orientations: StationOrientation[] = [];
@@ -79,7 +153,8 @@ export function computeInitialCoordinates(input: InitialComputationInput): Initi
     const weights: number[] = [];
     const used: string[] = [];
     const problems: string[] = [];
-    for (const [key, obs] of byStationTarget) {
+    for (const [key, representative] of byStationTarget) {
+      const obs = representative.obs;
       const [sid, adjName] = key.split('|');
       if (sid !== st.id) continue;
       if (!referenceIds.has(adjName)) continue;
@@ -89,8 +164,7 @@ export function computeInitialCoordinates(input: InitialComputationInput): Initi
       const hzRad = obs.hzDeg * DEG2RAD;
       angles.push(wrapPi(az - hzRad));
       // weight by horizontal distance (longer rays orient better)
-      const corr = corrections.get(obs.id);
-      const sd = corr ? corr.finalDistanceM : obs.sdM;
+      const sd = representative.correctedDistanceM;
       weights.push(Math.max(1, sd));
       used.push(adjName);
     }
@@ -115,7 +189,7 @@ export function computeInitialCoordinates(input: InitialComputationInput): Initi
   }
 
   // --- polar -> ENH per station, then combine
-  interface Estimate { stationId: string; e: number; n: number; h: number; obs: RawObservation }
+  interface Estimate { stationId: string; e: number; n: number; h: number; obs: RawObservation; nObs: number }
   const estimates = new Map<string, Estimate[]>();
   const failures: { targetId: string; reason: string }[] = [];
 
@@ -126,11 +200,11 @@ export function computeInitialCoordinates(input: InitialComputationInput): Initi
     const station = stationCoordinates.get(sid);
     const orientation = orientationByStation.get(sid);
     if (!st || !station || orientation === undefined) return;
-    for (const [key, obs] of byStationTarget) {
+    for (const [key, representative] of byStationTarget) {
+      const obs = representative.obs;
       const [obsStation, adjName] = key.split('|');
       if (obsStation !== sid) continue;
-      const corr = corrections.get(obs.id);
-      const sd = corr ? corr.finalDistanceM : obs.sdM;
+      const sd = representative.correctedDistanceM;
       const enh = polarToEnh({
         station,
         instrumentHeightM: st.instrumentHeightM,
@@ -141,7 +215,7 @@ export function computeInitialCoordinates(input: InitialComputationInput): Initi
         orientationRad: orientation,
       });
       const list = estimates.get(adjName) ?? [];
-      list.push({ stationId: sid, ...enh, obs });
+      list.push({ stationId: sid, ...enh, obs, nObs: representative.nSource });
       estimates.set(adjName, list);
     }
     radiatedStations.add(sid);
@@ -157,9 +231,9 @@ export function computeInitialCoordinates(input: InitialComputationInput): Initi
     for (const [name, list] of estimates) {
       if (known.has(name)) continue;
       known.set(name, {
-        e: list.reduce((sum, item) => sum + item.e, 0) / list.length,
-        n: list.reduce((sum, item) => sum + item.n, 0) / list.length,
-        h: list.reduce((sum, item) => sum + item.h, 0) / list.length,
+        e: median(list.map((item) => item.e)),
+        n: median(list.map((item) => item.n)),
+        h: median(list.map((item) => item.h)),
       });
     }
     return known;
@@ -171,12 +245,13 @@ export function computeInitialCoordinates(input: InitialComputationInput): Initi
     for (const st of stations) {
       if (orientationByStation.has(st.id)) continue;
       const ties: ResectionTie[] = [];
-      for (const [key, obs] of byStationTarget) {
+      for (const [key, representative] of byStationTarget) {
+        const obs = representative.obs;
         const [sid, adjName] = key.split('|');
         if (sid !== st.id) continue;
         const target = known.get(adjName);
         if (!target) continue;
-        const sd = corrections.get(obs.id)?.finalDistanceM ?? obs.sdM;
+        const sd = representative.correctedDistanceM;
         ties.push({
           id: adjName, target, obs,
           horizontalM: Math.abs(sd * Math.sin(obs.vzDeg * DEG2RAD)),
@@ -212,9 +287,9 @@ export function computeInitialCoordinates(input: InitialComputationInput): Initi
   const now = new Date().toISOString();
   for (const [adjName, list] of estimates) {
     if (referenceIds.has(adjName)) continue; // references are already known
-    const e = list.reduce((s, x) => s + x.e, 0) / list.length;
-    const n = list.reduce((s, x) => s + x.n, 0) / list.length;
-    const h = list.reduce((s, x) => s + x.h, 0) / list.length;
+    const e = median(list.map((item) => item.e));
+    const n = median(list.map((item) => item.n));
+    const h = median(list.map((item) => item.h));
     let spreadH = 0; let spreadV = 0;
     for (const x of list) {
       spreadH = Math.max(spreadH, Math.hypot(x.e - e, x.n - n));
@@ -223,9 +298,9 @@ export function computeInitialCoordinates(input: InitialComputationInput): Initi
     provisional.push({
       targetId: adjName,
       easting: e, northing: n, height: h,
-      nObservations: list.length,
+      nObservations: list.reduce((sum, item) => sum + item.nObs, 0),
       perStation: list.map((x) => ({
-        stationId: x.stationId, easting: x.e, northing: x.n, height: x.h, nObs: 1,
+        stationId: x.stationId, easting: x.e, northing: x.n, height: x.h, nObs: x.nObs,
       })),
       spreadHorizontalM: spreadH,
       spreadVerticalM: spreadV,
@@ -236,7 +311,7 @@ export function computeInitialCoordinates(input: InitialComputationInput): Initi
     });
   }
 
-  return { orientations, provisional, failures };
+  return { orientations, provisional, failures, coverage };
 }
 
 interface ResectionTie {

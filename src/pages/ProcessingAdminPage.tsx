@@ -471,7 +471,7 @@ function InitialTab({ config }: { config: ConfigurationVersion }) {
       <TableWrap>
         <thead>
           <tr><th>Target</th><th>E</th><th>N</th><th>H</th><th>Obs</th><th>Spread H (mm)</th>
-            <th>Spread V (mm)</th><th>Status</th><th>Window</th><th>Comment</th></tr>
+            <th>Spread V (mm)</th><th>Status</th><th>Observation sample</th><th>Comment</th></tr>
         </thead>
         <tbody>
           {config.provisionalCoordinates.map((p) => (

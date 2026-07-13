@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import type { WizardDraft } from './wizardTypes';
 import {
   Badge, Button, Callout, Card, Field, NumberInput, Select, TableWrap, TextInput, Toggle,
 } from '../../components/ui';
-import { computeInitialCoordinates } from '../../engine/initial';
+import { computeInitialCoordinates, initializationCoverage } from '../../engine/initial';
 import { resolveEngineName } from '../../engine/pointIdentity';
 import { correctDistance, lookupEnvironment } from '../../engine/corrections';
 import { repository } from '../../data/repository';
@@ -18,6 +18,27 @@ export function StepInitial({ draft, set }: { draft: WizardDraft; set: (p: Parti
   const anchor = draft.stations.find((station) => station.id === anchorId);
   const selectedReferenceSet = draft.refSets.find((setItem) => setItem.id === draft.selectedRefSetId);
   const canCompute = draft.initMode === 'local-anchor' || (selectedReferenceSet?.points.length ?? 0) > 0;
+  const initializationSample = useMemo(() => {
+    const parse = (value: string) => new Date(value + (value.endsWith('Z') ? '' : 'Z')).getTime();
+    const fromMs = parse(draft.initWindowFrom); const toMs = parse(draft.initWindowTo);
+    const observations = Number.isFinite(fromMs) && Number.isFinite(toMs)
+      ? repository.observationsInWindow(draft.stationIds, fromMs, toMs) : [];
+    const nameMap = new Map<string, string>();
+    const expectedKeys = new Set<string>();
+    for (const target of draft.targets) {
+      const engineName = resolveEngineName(target, draft.physicalPoints);
+      for (const stationId of target.stationIds) {
+        const key = `${stationId}|${target.rawName}`;
+        nameMap.set(key, engineName); expectedKeys.add(key);
+      }
+    }
+    return { fromMs, toMs, observations, nameMap, expectedKeys,
+      coverage: initializationCoverage(observations, expectedKeys, nameMap) };
+  }, [draft.initWindowFrom, draft.initWindowTo, draft.stationIds, draft.targets, draft.physicalPoints]);
+  const sampleIsValid = Number.isFinite(initializationSample.fromMs)
+    && Number.isFinite(initializationSample.toMs)
+    && initializationSample.fromMs <= initializationSample.toMs
+    && initializationSample.observations.length > 0;
   const patchAnchor = (patch: Partial<NonNullable<typeof anchor>>) => set({
     stations: draft.stations.map((station) => station.id === anchorId ? { ...station, ...patch } : station),
   });
@@ -25,16 +46,13 @@ export function StepInitial({ draft, set }: { draft: WizardDraft; set: (p: Parti
   const compute = () => {
     const refSet = draft.refSets.find((r) => r.id === draft.selectedRefSetId);
     if (!refSet) return;
-    const fromMs = new Date(draft.initWindowFrom + (draft.initWindowFrom.endsWith('Z') ? '' : 'Z')).getTime();
-    const toMs = new Date(draft.initWindowTo + (draft.initWindowTo.endsWith('Z') ? '' : 'Z')).getTime();
+    const { fromMs, toMs, observations, nameMap, expectedKeys } = initializationSample;
     // orientations computed alongside for display
-    const observations = repository.observationsInWindow(draft.stationIds, fromMs, toMs);
     const env = repository.environmental();
     const instruments = Object.fromEntries(repository.instrumentProfiles().map((p) => [p.id, p]));
     const setupByKey = new Map(draft.setups.map((s) => [`${s.stationId}|${s.targetKey}`, s]));
     const corrections = new Map<string, CorrectionTrace>();
     // per (station, field name) -> engine name via the physical point mapping
-    const nameMap = new Map<string, string>();
     for (const t of draft.targets) {
       const engineName = resolveEngineName(t, draft.physicalPoints);
       for (const sid of t.stationIds) nameMap.set(`${sid}|${t.rawName}`, engineName);
@@ -59,6 +77,7 @@ export function StepInitial({ draft, set }: { draft: WizardDraft; set: (p: Parti
       nameMap,
       targetHeights: new Map(draft.targets.map((t) => [resolveEngineName(t, draft.physicalPoints), t.targetHeightM])),
       referenceIds: new Set(refSet.points.map((p) => p.pointId)),
+      expectedObservationKeys: expectedKeys,
       fixedOrientations: draft.initMode === 'local-anchor'
         ? new Map([[anchorId, draft.initAnchorOrientationDeg * Math.PI / 180]]) : undefined,
       epochFrom: new Date(fromMs).toISOString(),
@@ -97,10 +116,10 @@ export function StepInitial({ draft, set }: { draft: WizardDraft; set: (p: Parti
     <div className="space-y-4">
       <Card title="Calculate initial coordinates"
         actions={
-          <Button variant="primary" size="xs" disabled={!canCompute} onClick={compute}>Compute initial coordinates</Button>
+          <Button variant="primary" size="xs" disabled={!canCompute || !sampleIsValid} onClick={compute}>Compute initial coordinates</Button>
         }>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <Field label="Representative period from" hint="Cycle(s) used for the initialization.">
+          <Field label="Observation sample from" hint="Measurements used to calculate the initial coordinates; this is not their validity period.">
             <TextInput type="datetime-local" value={draft.initWindowFrom}
               onChange={(e) => set({ initWindowFrom: e.target.value })} />
           </Field>
@@ -109,10 +128,21 @@ export function StepInitial({ draft, set }: { draft: WizardDraft; set: (p: Parti
               onChange={(e) => set({ initWindowTo: e.target.value })} />
           </Field>
           <div className="self-end text-2xs leading-5 text-slate-500">
-            Distances are corrected (prism + atmosphere), each station is oriented by weighted circular
-            mean over known references or propagated from the fixed station through common physical points.
+            For each station-target pair, BTM uses the median Hz, Vz and corrected slope distance over this period. Configuration validity is managed separately by the processing version.
           </div>
         </div>
+        <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs ring-1 ring-slate-200">
+          <strong>Sample coverage:</strong> {initializationSample.coverage.availablePhysicalPoints}/{initializationSample.coverage.expectedPhysicalPoints} physical points
+          {' '}({initializationSample.coverage.physicalPointCoveragePercent.toFixed(0)}%) · {initializationSample.coverage.availableStationTargets}/{initializationSample.coverage.expectedStationTargets} station-target pairs
+          {' '}({initializationSample.coverage.stationTargetCoveragePercent.toFixed(0)}%) · {initializationSample.coverage.observationsUsed} raw observations reduced to {initializationSample.coverage.representativeObservations} median representatives.
+          {initializationSample.coverage.missingStationTargets.length > 0 && <div className="mt-1 text-amber-700">
+            Missing in selected period: {initializationSample.coverage.missingStationTargets.slice(0, 8).join(', ')}
+            {initializationSample.coverage.missingStationTargets.length > 8 ? ` +${initializationSample.coverage.missingStationTargets.length - 8} more` : ''}
+          </div>}
+        </div>
+        {!sampleIsValid && (
+          <Callout tone="warning">Select a valid observation window containing at least one measurement.</Callout>
+        )}
         {draft.initMode === 'local-anchor' && anchor && (
           <div className="mt-5 rounded-xl border border-brand-100 bg-brand-50/60 p-4">
             <div className="mb-3 flex items-center justify-between">

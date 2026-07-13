@@ -92,7 +92,11 @@ export function CreateProcessingWizard() {
 function validateStep(d: WizardDraft): { ok: boolean; reason?: string } {
   switch (d.step) {
     case 0:
-      return d.name.trim() ? { ok: true } : { ok: false, reason: 'Processing name is required' };
+      if (!d.name.trim()) return { ok: false, reason: 'Processing name is required' };
+      if (!Number.isFinite(Date.parse(d.configurationValidFrom))) {
+        return { ok: false, reason: 'Configuration validity start is required' };
+      }
+      return { ok: true };
     case 1:
       if (d.stationIds.length === 0) return { ok: false, reason: 'Select at least one station' };
       if (d.networkKind === 'single-station' && d.stationIds.length > 1) {
@@ -238,6 +242,11 @@ function Step1({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraf
         <Field label="Active after creation">
           <Toggle checked={draft.activeAfterCreation} onChange={(v) => set({ activeAfterCreation: v })}
             label={draft.activeAfterCreation ? 'Yes - runs can trigger immediately' : 'No - created as inactive'} />
+        </Field>
+        <Field label="Configuration valid from"
+          hint="Start of processing-version validity. Independent from the observation sample used for initial coordinates.">
+          <TextInput type="datetime-local" value={draft.configurationValidFrom}
+            onChange={(e) => set({ configurationValidFrom: e.target.value })} />
         </Field>
       </div>
 

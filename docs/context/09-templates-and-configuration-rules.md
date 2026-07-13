@@ -164,6 +164,10 @@ Une nouvelle version est requise lors d'un changement de :
 La version porte `validFrom` inclus et `validTo` exclu. Un recalcul historique choisit la version
 valide à chaque slot, sauf override explicite et tracé demandé par l'utilisateur.
 
+La fenêtre d'observations utilisée pour calculer les coordonnées initiales est une provenance de
+calcul (`epochFrom` / `epochTo`), pas une période de validité. Elle ne modifie jamais le
+`validFrom` de la version de configuration.
+
 Aucune configuration utilisée par un run n'est supprimée. Elle peut être désactivée ou archivée.
 
 ## 9. Review et audit
