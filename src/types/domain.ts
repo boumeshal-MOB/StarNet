@@ -88,7 +88,11 @@ export interface CountryTemplate {
   chiSquareSignificance: number;   // e.g. 0.05
   confidenceLevel: number;         // e.g. 0.95
   defaultInstrumentTemplateId: string;
+  defaultPrismSetupTemplateId: string;
   prismSetupTemplateIds: string[];
+  prismCorrectionPolicy: 'already-applied' | 'apply-from-prism-setup';
+  defaultAtmosphericMode: AtmosphericMode;
+  defaultMissingEnvPolicy: MissingEnvPolicy;
   notes: string;
 }
 

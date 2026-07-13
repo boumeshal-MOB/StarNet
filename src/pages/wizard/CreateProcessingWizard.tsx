@@ -10,6 +10,8 @@ import {
   WIZARD_STEPS, type WizardDraft, defaultDraft, loadDraft, saveDraft,
 } from './wizardTypes';
 import { buildStations, buildTargetsAndSetups } from '../../store/seed';
+import { COUNTRY_TEMPLATES } from '../../data/templates';
+import { applyCountryCorrectionPreset, countryPresetSummary } from './countryDefaults';
 import { StepTargets, StepReferences } from './WizardStepsTargets';
 import { StepInitial, StepAdjustment } from './WizardStepsCompute';
 import { StepRun, StepOutput, StepReview } from './WizardStepsRun';
@@ -121,7 +123,15 @@ function prepareNextStep(d: WizardDraft): WizardDraft {
       const isReal = real ? d.stationIds.includes(real.stationId) : false;
       const realPointIds = new Set(real?.header.map((h) => h.PointId) ?? []);
       const refIds = isReal ? new Set(real?.referenceIds ?? []) : undefined;
-      const { targets, setups, physicalPoints } = buildTargetsAndSetups(d.stationIds, refIds);
+      const built = buildTargetsAndSetups(d.stationIds, refIds);
+      const country = COUNTRY_TEMPLATES.find((item) => item.id === d.countryTemplateId)
+        ?? COUNTRY_TEMPLATES[0];
+      const preset = applyCountryCorrectionPreset(
+        stations, built.targets, built.setups, country,
+        repository.prismProfiles(), repository.instrumentProfiles(),
+      );
+      const { targets, setups } = preset;
+      const { physicalPoints } = built;
       const procId = 'wizard-tmp';
       const importedRefSets = repository.referenceSetsFromHeader(procId, 'wizard',
         (id) => (isReal ? realPointIds.has(id) : id.startsWith('REF')));
@@ -145,9 +155,9 @@ function prepareNextStep(d: WizardDraft): WizardDraft {
       };
       const refSets = [...importedRefSets, localDatumSet];
       return {
-        ...d, stations, targets, setups, physicalPoints, refSets,
+        ...d, stations: preset.stations, targets, setups, physicalPoints, refSets,
         selectedRefSetId: importedRefSets[0]?.id ?? localDatumSet.id,
-        initAnchorStationId: stations[0]?.id ?? '',
+        initAnchorStationId: preset.stations[0]?.id ?? '',
         provisional: [], provisionalSaved: false,
         initWindowFrom: new Date(first - 60000).toISOString().slice(0, 16),
         initWindowTo: new Date(first + 2 * 3600000).toISOString().slice(0, 16),
@@ -161,6 +171,8 @@ function prepareNextStep(d: WizardDraft): WizardDraft {
 function Step1({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraft>) => void }) {
   const { state } = useApp();
   const proj = repository.project();
+  const country = state.countryTemplates.find((item) => item.id === draft.countryTemplateId)
+    ?? state.countryTemplates[0];
   return (
     <Card title="Step 1 - General information">
       <Callout tone="info">
@@ -193,8 +205,15 @@ function Step1({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraf
           <TextInput value={draft.description} onChange={(e) => set({ description: e.target.value })} />
         </Field>
         <Field label="Country template" hint="Pre-fills units, thresholds, instrument and prism catalogs. Editable defaults, not national standards.">
-          <Select value={draft.countryTemplateId} onChange={(v) => set({ countryTemplateId: v })}
+          <Select value={draft.countryTemplateId} onChange={(v) => set({
+            countryTemplateId: v,
+            stations: [], targets: [], setups: [], physicalPoints: [], refSets: [],
+            selectedRefSetId: '', provisional: [], provisionalSaved: false,
+          })}
             options={state.countryTemplates.map((c) => ({ value: c.id, label: c.name }))} />
+          <div className="mt-1.5 rounded-md bg-slate-50 px-2.5 py-2 text-2xs leading-4 text-slate-600">
+            {countryPresetSummary(country)}
+          </div>
         </Field>
         <Field label="Active after creation">
           <Toggle checked={draft.activeAfterCreation} onChange={(v) => set({ activeAfterCreation: v })}
@@ -272,26 +291,19 @@ function Step2({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraf
 // =============================================================== Step 3 ====
 function Step3({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraft>) => void }) {
   const instruments = repository.instrumentProfiles();
+  const edmModes = [...new Set(instruments.map((instrument) => instrument.edmMode))];
   const patchStation = (id: string, p: Partial<WizardDraft['stations'][number]>) => {
     const current = draft.stations.find((s) => s.id === id);
     if (!current) return;
     const next = { ...current, ...p };
-    // Keep the legacy snapshot field coherent, but never expose it as a
-    // second atmospheric switch in the UI.
+    // distanceState is retained for snapshot compatibility. Prism correction
+    // state is authoritative per target setup in the next step.
     next.distanceState = next.atmosphericMode === 'station-corrected'
       ? 'atmo-corrected'
-      : next.constantAppliedByStationM !== 0 ? 'prism-corrected' : 'raw';
+      : 'raw';
     const patch: Partial<WizardDraft> = {
       stations: draft.stations.map((s) => (s.id === id ? next : s)),
     };
-    // The engine reads the resolved Station-Prism setup. Propagate a station
-    // field constant to every existing prism setup so the displayed value and
-    // the actual calculation can never diverge.
-    if (p.constantAppliedByStationM !== undefined) {
-      patch.setups = draft.setups.map((setup) => setup.stationId === id
-        ? { ...setup, constantAppliedByStationM: p.constantAppliedByStationM! }
-        : setup);
-    }
     set(patch);
   };
 
@@ -302,13 +314,18 @@ function Step3({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraf
           <div className="grid gap-3 md:grid-cols-3">
             <Field label="Instrument template">
               <Select value={s.instrumentProfileId}
-                onChange={(v) => patchStation(s.id, { instrumentProfileId: v })}
+                onChange={(v) => {
+                  const instrument = instruments.find((item) => item.id === v);
+                  patchStation(s.id, {
+                    instrumentProfileId: v,
+                    ...(instrument ? { edmMode: instrument.edmMode } : {}),
+                  });
+                }}
                 options={instruments.map((i) => ({ value: i.id, label: `${i.manufacturer} ${i.model}` }))} />
             </Field>
             <Field label="EDM mode">
               <Select value={s.edmMode} onChange={(v) => patchStation(s.id, { edmMode: v })}
-                options={[{ value: 'Precise + Reflector', label: 'Precise + Reflector' },
-                  { value: 'Standard + Reflector', label: 'Standard + Reflector' }]} />
+                options={edmModes.map((mode) => ({ value: mode, label: mode }))} />
             </Field>
             <Field label="Instrument height" unit="m">
               <NumberInput value={s.instrumentHeightM} step={0.001}
@@ -365,21 +382,17 @@ function Step3({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraf
                   : s.atmosphericMode === 'none' ? 'Prism correction only'
                     : 'Atmosphere applied to slope distance'}
               </Badge>
-              <span>Prism correction → atmospheric correction → 3D reduction</span>
+              <span>Per-target prism correction → atmospheric correction → 3D reduction</span>
             </div>
           </div>
 
           <details className="group mt-3 rounded-lg border border-slate-200 bg-white">
             <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-xs font-medium text-slate-700">
-              <span>Advanced correction details</span>
+              <span>Correction calculation details</span>
               <span className="text-slate-400 transition-transform group-open:rotate-180">⌄</span>
             </summary>
             <div className="border-t border-slate-100 px-3 py-3">
               <div className="grid gap-3 md:grid-cols-2">
-                <Field label="Prism constant already applied" unit="mm" hint="BTM only applies the difference to the required constant.">
-                  <NumberInput value={s.constantAppliedByStationM * 1000} step={0.1}
-                    onChange={(v) => patchStation(s.id, { constantAppliedByStationM: v / 1000 })} />
-                </Field>
                 {s.atmosphericMode === 'automatic' && (
                   <Field label="Maximum T/P age" unit="min" hint="Relative to the observation cycle timestamp.">
                     <NumberInput value={s.envToleranceMin} onChange={(v) => patchStation(s.id, { envToleranceMin: v })} />
@@ -388,7 +401,7 @@ function Step3({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraf
               </div>
               <div className="mt-3 rounded-md bg-sky-50 px-3 py-2 text-2xs leading-5 text-sky-900">
                 <strong>Formula used on the slope distance</strong><br />
-                SD₁ = SD stored + (required prism constant − constant already applied)<br />
+                SD₁ = SD stored + (target setup constant − value already applied to that target)<br />
                 SD₂ = SD₁ × (1 + ppm(T, P) × 10⁻⁶)<br />
                 The atmospheric choice above is the single calculation rule. A grid or datum scale remains separate and applies only to the horizontal reduction. Every value and fallback is saved in the run trace.
               </div>

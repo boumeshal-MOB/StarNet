@@ -298,6 +298,28 @@ export function generateAts34Fixture(seed = 20260711): Ats34Fixture {
   // ---------------------------------------------------------- profiles -----
   const instrumentProfiles: InstrumentProfile[] = [
     {
+      id: 'inst-topcon-ms05axii', manufacturer: 'Topcon', model: 'MS05AXII (0.5")', edmMode: 'Fine + Prism',
+      version: 1, status: 'active', wavelengthNm: 0,
+      distanceStdErrMm: 0.8, distancePpm: 1,
+      directionStdErrArcSec: 0.5, hzAngleStdErrArcSec: 0.5, vzAngleStdErrArcSec: 0.5,
+      azimuthStdErrArcSec: 0.5,
+      instrumentCenteringErrMm: 0, targetCenteringErrMm: 0, verticalCenteringErrMm: 0,
+      defaultInstrumentHeightM: 0,
+      atmosphericModel: 'standard-ppm-v1', atmosphericModelVersion: 'BTM standard P/T formula v1',
+      notes: 'Topcon MS AXII brochure: 0.5 arc-second angle accuracy and 0.8 mm + 1 ppm with one prism. Permanent monitoring defaults keep centering and instrument height at 0 until configured.',
+    },
+    {
+      id: 'inst-topcon-ms1axii', manufacturer: 'Topcon', model: 'MS1AXII (1")', edmMode: 'Fine + Prism',
+      version: 1, status: 'active', wavelengthNm: 0,
+      distanceStdErrMm: 1, distancePpm: 1,
+      directionStdErrArcSec: 1, hzAngleStdErrArcSec: 1, vzAngleStdErrArcSec: 1,
+      azimuthStdErrArcSec: 1,
+      instrumentCenteringErrMm: 0, targetCenteringErrMm: 0, verticalCenteringErrMm: 0,
+      defaultInstrumentHeightM: 0,
+      atmosphericModel: 'standard-ppm-v1', atmosphericModelVersion: 'BTM standard P/T formula v1',
+      notes: 'Topcon MS AXII brochure: 1 arc-second angle accuracy and 1 mm + 1 ppm with one prism. Permanent monitoring defaults keep centering and instrument height at 0 until configured.',
+    },
+    {
       id: 'inst-tm50', manufacturer: 'Leica', model: 'TM50 I (0.5")', edmMode: 'Precise + Reflector',
       version: 1, status: 'active', wavelengthNm: 658,
       distanceStdErrMm: 0.6, distancePpm: 1,
@@ -320,19 +342,43 @@ export function generateAts34Fixture(seed = 20260711): Ats34Fixture {
       notes: 'General purpose profile.',
     },
   ];
-  const mkPrism = (id: string, name: string, cM: number, type: string): PrismProfile => ({
+  const mkPrism = (
+    id: string, name: string, cM: number, type: string,
+    over: Partial<PrismProfile> = {},
+  ): PrismProfile => ({
     id, name, instrumentProfileId: 'inst-tm50', edmMode: 'Precise + Reflector',
     manufacturer: 'Leica', model: type, prismType: type, grade: 'Standard', country: 'France',
     effectiveConstantM: cM, defaultTargetHeightM: 0, version: 1, status: 'active',
-    notes: 'Effective constant for the station profile + EDM mode pair. Stored in metres, displayed in mm.',
+    notes: 'Effective constant for the instrument / EDM / reflector setup. Stored in metres, displayed in mm.',
+    ...over,
   });
   const prismProfiles: PrismProfile[] = [
     mkPrism('prism-std0', 'Standard prism (0.0 mm)', 0, 'Standard prism'),
     mkPrism('prism-circ89', 'Circular prism (+8.9 mm)', 0.0089, 'Circular prism'),
     mkPrism('prism-360-265', '360 deg prism (+26.5 mm)', 0.0265, '360 deg prism'),
     mkPrism('prism-tape30', 'Reflector tape (+30.0 mm)', 0.0300, 'Reflector tape'),
-    mkPrism('prism-mpo-fr', 'MPO FR (+25.5 mm)', 0.0255, 'MPO mini prism'),
-    mkPrism('prism-pav-fr', 'PAV FR (0.0 mm)', 0, 'PAV prism'),
+    mkPrism('prism-mpo-fr', 'MPO FR (+25.5 mm)', 0.0255, 'MPO mini prism', {
+      instrumentProfileId: 'inst-topcon-ms05axii', edmMode: 'Fine + Prism', manufacturer: 'Topcon',
+    }),
+    mkPrism('prism-pav-fr', 'PAV FR (0.0 mm)', 0, 'PAV prism', {
+      instrumentProfileId: 'inst-topcon-ms05axii', edmMode: 'Fine + Prism', manufacturer: 'Topcon',
+    }),
+    mkPrism('prism-rob-0', 'Rob legacy · 0.0 mm', 0, 'Lookup reflector', {
+      country: 'United Kingdom', instrumentProfileId: 'inst-topcon-ms05axii', edmMode: 'Fine + Prism', manufacturer: 'Topcon',
+      notes: 'Constant from the Rob ATS34 lookup table; reflector model was not supplied.',
+    }),
+    mkPrism('prism-rob-89', 'Rob legacy · +8.9 mm', 0.0089, 'L-bar', {
+      country: 'United Kingdom', instrumentProfileId: 'inst-topcon-ms05axii', edmMode: 'Fine + Prism', manufacturer: 'Topcon',
+      notes: 'Constant documented by Rob for L-bar targets in the ATS34 lookup workbook.',
+    }),
+    mkPrism('prism-rob-265', 'Rob legacy · +26.5 mm', 0.0265, 'Micro prism', {
+      country: 'United Kingdom', instrumentProfileId: 'inst-topcon-ms05axii', edmMode: 'Fine + Prism', manufacturer: 'Topcon',
+      notes: 'Constant documented by Rob for Micro Prism targets in the ATS34 lookup workbook.',
+    }),
+    mkPrism('prism-rob-30', 'Rob legacy · +30.0 mm', 0.0300, '360 mini', {
+      country: 'United Kingdom', instrumentProfileId: 'inst-topcon-ms05axii', edmMode: 'Fine + Prism', manufacturer: 'Topcon',
+      notes: 'Constant documented by Rob for 360 mini targets in the ATS34 lookup workbook.',
+    }),
   ];
 
   // ----------------------------------------------- provenance validation ---

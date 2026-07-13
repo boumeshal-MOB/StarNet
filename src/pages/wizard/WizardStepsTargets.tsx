@@ -10,6 +10,7 @@ import { fmtMm } from '../../lib/format';
 import type { ReferencePoint, TargetMapping } from '../../types/domain';
 import { PointIdentityPanel } from '../../components/PointIdentityPanel';
 import { resolveEngineName, targetSourceKey } from '../../engine/pointIdentity';
+import { COUNTRY_TEMPLATES } from '../../data/templates';
 
 // ============================================================ Step 4 =======
 export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraft>) => void }) {
@@ -18,7 +19,16 @@ export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Parti
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [batchOpen, setBatchOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const prisms = repository.prismProfiles();
+  const allPrisms = repository.prismProfiles();
+  const country = COUNTRY_TEMPLATES.find((item) => item.id === draft.countryTemplateId)
+    ?? COUNTRY_TEMPLATES[0];
+  const catalogIds = new Set(country.prismSetupTemplateIds);
+  const usedIds = new Set(draft.targets.map((target) => target.prismProfileId));
+  const prisms = allPrisms.filter((prism) => catalogIds.has(prism.id) || usedIds.has(prism.id));
+  const countryDefaultPrism = allPrisms.find((prism) =>
+    prism.id === country.defaultPrismSetupTemplateId) ?? prisms[0];
+  const appliedByDefault = (effectiveConstantM: number) =>
+    country.prismCorrectionPolicy === 'already-applied' ? effectiveConstantM : 0;
 
   const patchTarget = (id: string, p: Partial<TargetMapping>) => {
     const current = draft.targets.find((t) => t.id === id);
@@ -52,7 +62,8 @@ export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Parti
       targets: draft.targets.map((t) => selected.has(t.id)
         ? { ...t, ...p, source: 'manual-override' as const } : t),
       setups: prism ? draft.setups.map((setup) => selectedSourceKeys.has(targetSourceKey(setup.stationId, setup.targetKey))
-        ? { ...setup, prismProfileId: prism.id, effectiveConstantM: prism.effectiveConstantM, source: 'manual-override' as const }
+        ? { ...setup, prismProfileId: prism.id, effectiveConstantM: prism.effectiveConstantM,
+            constantAppliedByStationM: appliedByDefault(prism.effectiveConstantM), source: 'manual-override' as const }
         : setup) : draft.setups,
     });
     setBatchOpen(false);
@@ -117,13 +128,13 @@ export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Parti
         initialCoordinateStatus: 'to-review',
         nomenclatureIssues: [],
       });
-      const defaultPrism = prisms.find((p) => p.id === 'prism-std0') ?? prisms[0];
+      const defaultPrism = countryDefaultPrism;
       newSetups.push({
         stationId,
         targetKey: rawName,
         prismProfileId: defaultPrism?.id ?? 'prism-std0',
         effectiveConstantM: defaultPrism?.effectiveConstantM ?? 0,
-        constantAppliedByStationM: draft.stations.find((s) => s.id === stationId)?.constantAppliedByStationM ?? 0,
+        constantAppliedByStationM: appliedByDefault(defaultPrism?.effectiveConstantM ?? 0),
         targetHeightM: 0,
         source: 'manual-override',
       });
@@ -177,8 +188,8 @@ export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Parti
             <th>Engine point ID</th>
             {advancedOpen && <th>BTM output name</th>}
             <th>Role</th><th>Prism template</th>
-            {advancedOpen && <><th>Grade</th><th>Height (m)</th><th>Effective const (mm)</th><th>Applied in station (mm)</th></>}
-            <th>BTM correction (mm)</th><th>Initial coords</th><th>Include</th><th>Publish</th>
+            {advancedOpen && <><th>Grade</th><th>Height (m)</th><th>Required const (mm)</th><th>Already in stored Sd (mm)</th></>}
+            <th>Prism correction</th><th>Initial coords</th><th>Include</th><th>Publish</th>
             {advancedOpen && <th>Source</th>}
           </tr>
         </thead>
@@ -224,7 +235,8 @@ export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Parti
                       if (prism) {
                         set({
                           setups: draft.setups.map((s) => s.targetKey === t.rawName && t.stationIds.includes(s.stationId)
-                            ? { ...s, prismProfileId: prism.id, effectiveConstantM: prism.effectiveConstantM, source: 'manual-override' }
+                            ? { ...s, prismProfileId: prism.id, effectiveConstantM: prism.effectiveConstantM,
+                                constantAppliedByStationM: appliedByDefault(prism.effectiveConstantM), source: 'manual-override' }
                             : s),
                         });
                       }
@@ -236,9 +248,19 @@ export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Parti
                   <td>{t.grade ?? '-'}</td>
                   <td>{t.targetHeightM.toFixed(3)}</td>
                   <td className="text-right">{fmtMm(setup?.effectiveConstantM, 1)}</td>
-                  <td className="text-right">{fmtMm(setup?.constantAppliedByStationM, 1)}</td>
+                  <td className="text-right">
+                    {setup ? <input className="input !w-20 !px-1 !py-0.5 !text-right !text-xs"
+                      type="number" step="0.1" value={setup.constantAppliedByStationM * 1000}
+                      onChange={(e) => set({ setups: draft.setups.map((item) => item === setup
+                        ? { ...item, constantAppliedByStationM: Number(e.target.value) / 1000, source: 'manual-override' }
+                        : item) })} /> : '-'}
+                  </td>
                 </>}
-                <td className="text-right font-medium">{fmtMm(delta, 1)}</td>
+                <td className="text-right font-medium">
+                  {Math.abs(delta) < 1e-9
+                    ? <Badge tone="Success">Already corrected</Badge>
+                    : <Badge tone="Ready">BTM {delta > 0 ? '+' : ''}{fmtMm(delta, 1)} mm</Badge>}
+                </td>
                 <td><Badge tone={t.initialCoordinateStatus === 'computed' ? 'Success' : 'Draft'}>{t.initialCoordinateStatus}</Badge></td>
                 <td><Toggle checked={t.includeInAdjustment} onChange={(v) => patchTarget(t.id, { includeInAdjustment: v })} /></td>
                 <td><Toggle checked={t.publishOutput} onChange={(v) => patchTarget(t.id, { publishOutput: v })} /></td>
@@ -251,7 +273,7 @@ export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Parti
         </tbody>
       </TableWrap>
       <p className="mt-2 text-2xs text-slate-500">
-        The nomenclature controller keeps the raw field name untouched, validates the internal engine
+        Prism correction is resolved per BTM target. The country template only supplies defaults; use Advanced options for an exception on a specific station-prism pair. The nomenclature controller keeps the raw field name untouched, validates the internal engine
         name (length, characters, collisions - future Star*Net compatibility) and the BTM output name.
         New targets found in the data are added as <em>To review</em> and never auto-included.
       </p>
