@@ -226,12 +226,16 @@ les correspondances afin que le `.DAT`, les résultats et la base puissent être
 
 ## UI
 
-- Wizard étape 4 : panneau *Point Identity* sous le tableau des cibles (lecture/édition draft).
+- Wizard étape 4 : tableau compact des cibles et configurations de mesure, puis assistant
+  `Common physical points`.
+- L'assistant demande deux paires manuelles au minimum, affiche `Weak geometry` avec deux paires,
+  calcule la transformation locale, puis présente les candidats H/V à confirmer.
+- Le tableau principal contient seulement les points réellement partagés. Les cibles individuelles
+  restent dans le tableau normal des cibles.
+- Le bloc `Known geometry` conserve séparément distances inclinées/horizontales, différences de
+  hauteur et vecteurs 3D entre points distincts.
 - Admin → onglet *Point Identity* : même panneau ; édition staged → « Save as new version ».
-- Colonnes : station, id cible BTM, nom source (indicateur ≠ si le même nom existe ailleurs
-  pour un autre point), rôle, point physique, engine id, prismes liés, état, dispersion H/V,
-  source de la décision + justification. Filtres : shared / not confirmed / manually decided /
-  inconsistent. Connectivité affichée en pied de panneau.
+- La connectivité et le minimum de deux points communs par station sont contrôlés avant la suite.
 
 ## Tests
 
@@ -242,15 +246,10 @@ d'engine name, réseau déconnecté bloqué, snapshot résolu. Scénarios 3 (sug
 proximité), 4 (changement dans le temps = nouvelle version) et 6 (isolation) sont couverts
 par le panneau + le versionnement de configuration existant.
 
-## Écart avec la maquette actuelle
+## État de la maquette
 
-La maquette implémente déjà les identités distinctes par défaut, la liaison/déliaison manuelle,
-les suggestions après coordonnées provisoires, la validation des collisions et le mapping
-inverse des résultats. Restent à implémenter selon ce document :
-
-- l'initialisation manuelle par deux points minimum avant `Check` ;
-- la transformation locale et les propositions supplémentaires sans coordonnées globales ;
-- le tableau limité aux seuls points réellement partagés ;
-- le statut `Weak geometry` avec exactement deux points ;
-- le tableau séparé des relations géométriques et leur export moteur ;
-- les règles de tolérance H/V et le contrôle de distribution avant validation groupée.
+La maquette couvre maintenant l'initialisation manuelle, le contrôle géométrique local,
+la validation explicite des candidats, le tableau limité aux points partagés, le statut
+`Weak geometry`, les tolérances H/V et les relations géométriques intégrées au moteur de moindres
+carrés. Une évolution future pourra ajouter un indicateur graphique plus poussé de distribution
+des points et des tolérances dérivées automatiquement de la covariance complète.
