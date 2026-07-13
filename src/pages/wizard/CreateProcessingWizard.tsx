@@ -10,7 +10,7 @@ import {
   WIZARD_STEPS, type WizardDraft, defaultDraft, loadDraft, saveDraft,
 } from './wizardTypes';
 import { buildStations, buildTargetsAndSetups } from '../../store/seed';
-import { COUNTRY_TEMPLATES } from '../../data/templates';
+import { ADJUSTMENT_TEMPLATES, COUNTRY_TEMPLATES } from '../../data/templates';
 import { applyCountryCorrectionPreset, countryPresetSummary } from './countryDefaults';
 import { StepTargets, StepReferences } from './WizardStepsTargets';
 import { StepInitial, StepAdjustment } from './WizardStepsCompute';
@@ -229,11 +229,17 @@ function Step1({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraf
           <TextInput value={draft.description} onChange={(e) => set({ description: e.target.value })} />
         </Field>
         <Field label="Country template" hint="Pre-fills units, thresholds, instrument and prism catalogs. Editable defaults, not national standards.">
-          <Select value={draft.countryTemplateId} onChange={(v) => set({
-            countryTemplateId: v,
-            stations: [], targets: [], setups: [], physicalPoints: [], refSets: [],
-            selectedRefSetId: '', provisional: [], provisionalSaved: false,
-          })}
+          <Select value={draft.countryTemplateId} onChange={(v) => {
+            const nextCountry = state.countryTemplates.find((item) => item.id === v);
+            const nextAdjustment = ADJUSTMENT_TEMPLATES.find((item) =>
+              item.id === nextCountry?.defaultAdjustmentTemplateId);
+            set({
+              countryTemplateId: v,
+              ...(nextAdjustment ? { adjustment: { ...nextAdjustment } } : {}),
+              stations: [], targets: [], setups: [], physicalPoints: [], refSets: [],
+              selectedRefSetId: '', provisional: [], provisionalSaved: false,
+            });
+          }}
             options={state.countryTemplates.map((c) => ({ value: c.id, label: c.name }))} />
           <div className="mt-1.5 rounded-md bg-slate-50 px-2.5 py-2 text-2xs leading-4 text-slate-600">
             {countryPresetSummary(country)}

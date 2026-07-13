@@ -2,7 +2,7 @@
 
 > Document de contexte pour agents IA / nouveaux développeurs. Lire ce fichier en premier,
 > puis `01-architecture.md`, `02-data-model.md`, `03-engine.md`, `04-scenarios.md` et
-> `10-adjustment-template-mapping.md` pour les templates UK/France.
+> `10-starnet-country-templates.md` pour les templates UK/France.
 
 ## Objet
 

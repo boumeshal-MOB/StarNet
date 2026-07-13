@@ -331,6 +331,17 @@ export function generateAts34Fixture(seed = 20260711): Ats34Fixture {
       notes: 'Monitoring total station, pillar mounted, heights referenced to trunnion axis (0 m).',
     },
     {
+      id: 'inst-tm50-uk-legacy', manufacturer: 'Leica', model: 'TM50 I · UK legacy weights', edmMode: 'Precise + Reflector',
+      version: 1, status: 'active', wavelengthNm: 658,
+      distanceStdErrMm: 1, distancePpm: 1,
+      directionStdErrArcSec: 2.5, hzAngleStdErrArcSec: 1.414, vzAngleStdErrArcSec: 1.5,
+      azimuthStdErrArcSec: 1,
+      instrumentCenteringErrMm: 0.8, targetCenteringErrMm: 0.8, verticalCenteringErrMm: 0.5,
+      defaultInstrumentHeightM: 0,
+      atmosphericModel: 'standard-ppm-v1', atmosphericModelVersion: 'v1 (281.8 - 0.29065 P / (1 + T/273.15))',
+      notes: 'Project weights transcribed from the supplied UK HS2/NTE STAR*NET configuration.',
+    },
+    {
       id: 'inst-ts16', manufacturer: 'Leica', model: 'TS16 (1")', edmMode: 'Standard + Reflector',
       version: 1, status: 'active', wavelengthNm: 658,
       distanceStdErrMm: 1, distancePpm: 1.5,
@@ -364,19 +375,19 @@ export function generateAts34Fixture(seed = 20260711): Ats34Fixture {
       instrumentProfileId: 'inst-topcon-ms05axii', edmMode: 'Fine + Prism', manufacturer: 'Topcon',
     }),
     mkPrism('prism-uk-leica-circular-0', 'Leica circular prism (0.0 mm)', 0, 'Leica circular prism', {
-      country: 'United Kingdom', instrumentProfileId: 'inst-tm50', edmMode: 'Precise + Reflector', manufacturer: 'Leica',
+      country: 'United Kingdom', instrumentProfileId: 'inst-tm50-uk-legacy', edmMode: 'Precise + Reflector', manufacturer: 'Leica',
       notes: 'Supplied UK Lookup note: +0.0 mm for Leica Circular Prism.',
     }),
     mkPrism('prism-uk-lbar-89', 'L-bar (+8.9 mm)', 0.0089, 'L-bar', {
-      country: 'United Kingdom', instrumentProfileId: 'inst-tm50', edmMode: 'Precise + Reflector', manufacturer: 'Leica',
+      country: 'United Kingdom', instrumentProfileId: 'inst-tm50-uk-legacy', edmMode: 'Precise + Reflector', manufacturer: 'Leica',
       notes: 'Supplied UK Lookup note: +8.9 mm for L-bar.',
     }),
     mkPrism('prism-uk-micro-265', 'Micro prism (+26.5 mm)', 0.0265, 'Micro prism', {
-      country: 'United Kingdom', instrumentProfileId: 'inst-tm50', edmMode: 'Precise + Reflector', manufacturer: 'Leica',
+      country: 'United Kingdom', instrumentProfileId: 'inst-tm50-uk-legacy', edmMode: 'Precise + Reflector', manufacturer: 'Leica',
       notes: 'Supplied UK Lookup note: +26.5 mm for Micro Prism.',
     }),
     mkPrism('prism-uk-360mini-30', '360 mini prism (+30.0 mm)', 0.0300, '360 mini prism', {
-      country: 'United Kingdom', instrumentProfileId: 'inst-tm50', edmMode: 'Precise + Reflector', manufacturer: 'Leica',
+      country: 'United Kingdom', instrumentProfileId: 'inst-tm50-uk-legacy', edmMode: 'Precise + Reflector', manufacturer: 'Leica',
       notes: 'Supplied UK Lookup note: +30.0 mm for 360 mini.',
     }),
   ];

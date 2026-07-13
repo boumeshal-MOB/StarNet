@@ -22,7 +22,7 @@ aperçu du diff.
 
 Préremplit :
 
-- unités et ordre des coordonnées ;
+- Adjustment Template STAR*NET associé ;
 - instrument et configuration de mesure proposés ;
 - catalogues de réflecteurs disponibles ;
 - état attendu des distances stockées ;
@@ -66,10 +66,10 @@ cibles de la même station.
 Contient dimension, projection, convergence, pondération, χ², confiance, erreurs de centrage,
 autocorrection et seuils de publication. Les options avancées restent toujours accessibles.
 
-Un Adjustment Template porte aussi une provenance moteur. Une convergence STAR*NET, un critère
-CoMeT et un seuil de déplacement du moteur local sont trois sémantiques distinctes, même si les
-interfaces historiques utilisent le mot « convergence ». Les valeurs et règles détaillées sont
-définies dans [`10-adjustment-template-mapping.md`](10-adjustment-template-mapping.md).
+Un Adjustment Template BTM contient uniquement des paramètres STAR*NET. La convergence STAR*NET
+et le seuil de déplacement du moteur local sont deux sémantiques distinctes, même si les deux
+interfaces utilisent le mot « convergence ». Les valeurs et règles détaillées sont définies dans
+[`10-starnet-country-templates.md`](10-starnet-country-templates.md).
 
 ### Run template
 
@@ -96,11 +96,9 @@ Valeurs initiales actuellement retenues :
 Une station française peut néanmoins mélanger MPO, autre prisme, feuille et laser sans prisme.
 Chaque exception reçoit son propre Measurement Setup.
 
-Le fichier CoMeT fourni propose en plus un ajustement `3D_LOCALE`, mètres, angles en gons,
-30 itérations, validation à 95 %, Huber 2.0 et VCE Helmert (5 itérations). Seuls les paramètres
-ayant un équivalent démontré sont appliqués au moteur cible. Huber, Helmert et le critère de
-convergence CoMeT ne sont jamais assimilés silencieusement à l'autocorrection ou à la convergence
-STAR*NET.
+Le template d'ajustement associé est `FR — STAR*NET monitoring` : 3D local, mètres, sortie en
+gons, ordre EN, Slope/Zenith, convergence STAR*NET 0.01 sans unité, 30 itérations, χ² 5 %,
+confiance 95 %, propagation activée, réfraction 0.13 et rayon 6 371 000 m.
 
 ## 4. Preset Royaume-Uni
 
@@ -133,6 +131,9 @@ observation par itération et autorise 20 itérations. Ces 20 itérations ne rem
 
 Le nom « UK » reste un raccourci de sélection. Ces valeurs viennent du projet HS2/NTE fourni et
 ne constituent pas une norme nationale.
+
+Les templates FR et UK produisent le même format STAR*NET et ne contiennent aucun paramètre
+propre à un autre moteur.
 
 ## 5. Priorité de résolution
 

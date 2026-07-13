@@ -34,7 +34,7 @@ Le moteur local s'arrête lorsque le déplacement maximal des coordonnées est i
 `convergenceThresholdM` et que la variation d'orientation est suffisamment petite. Ce seuil en
 mètres appartient uniquement au moteur de maquette. Il ne doit pas être exporté comme
 `converge_limit` STAR*NET : STAR*NET utilise un seuil sans unité sur la variation de la somme des
-carrés des résidus standardisés. CoMeT possède encore une autre sémantique à confirmer.
+carrés des résidus standardisés. Seul ce paramètre STAR*NET est généré pour la production.
 
 - **Inconnues** : E/N/H de chaque point libre (stations ajustables, références, prismes
   observés) + **une orientation par station** présente dans l'époque (jamais une constante

@@ -95,7 +95,13 @@ export function loadDraft(): WizardDraft | null {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
-    const loaded = { ...defaultDraft(), ...JSON.parse(raw) } as WizardDraft;
+    const defaults = defaultDraft();
+    const parsed = JSON.parse(raw) as Partial<WizardDraft>;
+    const loaded = {
+      ...defaults,
+      ...parsed,
+      adjustment: { ...defaults.adjustment, ...(parsed.adjustment ?? {}) },
+    } as WizardDraft;
     loaded.step = Math.min(loaded.step, WIZARD_STEPS.length - 1);
     loaded.maxReached = Math.min(loaded.maxReached, WIZARD_STEPS.length - 1);
     return loaded;
