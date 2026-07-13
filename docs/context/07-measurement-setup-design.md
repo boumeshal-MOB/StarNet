@@ -67,7 +67,7 @@ feuilles réfléchissantes et les mesures sans prisme.
 | Station | Station qui produit l'observation |
 | BTM target | Identifiant et nom de la cible dans BTM |
 | Measurement type | Prism / Reflective sheet / Reflectorless |
-| Measurement setup | Libellé compact, par exemple `MPO FR · Fine · corrected` |
+| Measurement setup | Libellé compact, par exemple `Reflector setup · Fine · corrected` |
 | Distance correction | `Already corrected`, `BTM +8.9 mm` ou `Not applicable` |
 | Initial coordinates | État des coordonnées initiales |
 | Include | Inclusion dans l'ajustement |
@@ -165,7 +165,7 @@ Valeurs initiales actuellement demandées :
 Ce preset reste un défaut. Une cible laser ou un autre réflecteur sur la même station crée une
 configuration de mesure distincte.
 
-### Royaume-Uni — Rob / StarAdjust legacy
+### Royaume-Uni (UK)
 
 - distances inclinées brutes ;
 - constante déjà appliquée `0,0 mm` ;
@@ -173,7 +173,11 @@ configuration de mesure distincte.
 - correction atmosphérique calculée avec T/P du cycle lorsqu'elles sont disponibles ;
 - chaque cible conserve sa configuration issue de la Lookup Table.
 
-## 6. Exemple de cycle mixte
+Le comportement présenté par Rob et le fonctionnement StarAdjust legacy constituent la
+source métier interne de ce template UK. `Rob` ne doit pas apparaître comme nom de template
+ou comme préfixe dans la nomenclature des points.
+
+## 6. Exemple France d'un cycle mixte
 
 Une seule Topcon MS05AXII peut produire :
 
@@ -186,9 +190,38 @@ Une seule Topcon MS05AXII peut produire :
 | WALL01 | Reflectorless | Non-prism · Fine | N/A | N/A | 0,0 mm |
 
 Les cinq observations peuvent appartenir au même cycle. Chacune reçoit sa correction et son
-poids propres avant l'ajustement.
+poids propres avant l'ajustement. Les libellés `MPO...` de cet exemple sont propres à la
+nomenclature de la base France ; ils ne doivent pas être générés dans un projet UK.
 
-## 7. Règles de validation
+## 7. Nomenclature des cibles, points physiques et noms STAR*NET
+
+Le type de réflecteur et le nom du point sont deux informations différentes. `MPO FR` décrit
+une configuration de mesure française ; `MPO001` est un exemple de nom source dans la base
+France. Aucun des deux ne doit devenir une nomenclature universelle.
+
+Règles principales :
+
+- conserver le nom source exact par station et par base pays ;
+- utiliser un `physicalPointId` interne, stable et sans préfixe pays ;
+- réutiliser le `AdjustmentName` fourni par la base/Lookup comme nom moteur uniquement s'il
+  est valide, unique et rattaché au bon point physique ;
+- générer sinon un alias neutre versionné `PT000001`, jamais un faux nom `MPO...` ;
+- écrire ce nom moteur résolu dans toutes les occurrences du point dans le `.DAT` ;
+- utiliser le même nom moteur lorsque plusieurs stations visent le même point physique ;
+- utiliser des noms moteur différents lorsque deux cibles homonymes représentent des points
+  physiques distincts ;
+- résoudre les sorties par `engineName → physicalPointId → cible(s) BTM`, sans déduire
+  l'identité depuis le texte du nom.
+
+Pour le template France, les noms `MPO...` proviennent donc de la base France. Pour le
+template UK, les noms proviennent de la Lookup Table UK/legacy, par exemple `360_301_34` ou
+`L_ANL1100_329`. « Rob » reste une source métier interne du template UK et ne constitue pas
+une nomenclature affichée ou envoyée à STAR*NET.
+
+Les règles complètes et les exemples de mapping `.DAT` sont définis dans
+[`06-physical-points.md`](06-physical-points.md).
+
+## 8. Règles de validation
 
 ### Erreurs bloquantes
 
@@ -207,7 +240,7 @@ poids propres avant l'ajustement.
 - constante personnalisée différente du template ;
 - absence ou invalidité de T/P lorsque BTM doit appliquer la correction atmosphérique.
 
-## 8. Comportement attendu du moteur
+## 9. Comportement attendu du moteur
 
 Pour chaque distance inclinée :
 
@@ -232,7 +265,7 @@ Le snapshot du run conserve au minimum : type de mesure, mode EDM, réflecteur �
 constantes requise/appliquée, delta, politique atmosphérique, poids, source de chaque valeur et
 version de configuration.
 
-## 9. Écart actuel de la maquette
+## 10. Écart actuel de la maquette
 
 À la date de cette spécification :
 
@@ -246,9 +279,9 @@ version de configuration.
 La prochaine évolution doit donc retirer le sélecteur EDM global du parcours standard,
 introduire les configurations de mesure par cible et brancher leurs poids dans le moteur.
 
-## 10. Critères d'acceptation UX
+## 11. Critères d'acceptation UX
 
-- un utilisateur configure une station utilisant 50 MPO identiques sans éditer 50 lignes ;
+- un utilisateur configure une station utilisant 50 réflecteurs identiques sans éditer 50 lignes ;
 - il remplace trois exceptions en modification groupée ;
 - il ajoute une cible laser sans voir de champ de constante de prisme ;
 - le résumé de l'étape Instrument indique immédiatement la composition des mesures ;
@@ -256,7 +289,7 @@ introduire les configurations de mesure par cible et brancher leurs poids dans l
 - Review & Create montre les fallbacks, incompatibilités et corrections non nulles ;
 - le détail d'un run explique exactement pourquoi une distance et un poids ont été utilisés.
 
-## 11. Références fonctionnelles
+## 12. Références fonctionnelles
 
 - classeur Rob `ATS34 Raw Data, Lookup, Header` et fonctionnement StarAdjust legacy fourni au
   projet ;
