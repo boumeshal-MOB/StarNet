@@ -1,5 +1,5 @@
 import type {
-  AdjustmentTemplate, OutputTemplate, PhysicalPoint, ProvisionalCoordinate,
+  AdjustmentTemplate, GeometricRelationship, OutputTemplate, PhysicalPoint, ProvisionalCoordinate,
   ReferenceSet, RunTemplate, Station, StationPrismSetup, TargetMapping,
 } from '../../types/domain';
 import { DEFAULT_ADJUSTMENT, DEFAULT_OUTPUT, DEFAULT_RUN } from '../../data/templates';
@@ -7,7 +7,7 @@ import type { StationOrientation } from '../../engine/initial';
 import { FIXTURE_START } from '../../data/fixture';
 
 export const WIZARD_STEPS = [
-  'General', 'Stations', 'Instruments', 'Targets & Prisms', 'References',
+  'General', 'Stations', 'Instruments', 'Targets & Measurements', 'References',
   'Initial Coordinates', 'Adjustment', 'Run', 'Output', 'Review & Create',
 ];
 
@@ -31,6 +31,7 @@ export interface WizardDraft {
   targets: TargetMapping[];
   setups: StationPrismSetup[];
   physicalPoints: PhysicalPoint[];
+  geometricRelationships: GeometricRelationship[];
   // 5 - references
   refSets: ReferenceSet[];
   selectedRefSetId: string;
@@ -67,6 +68,7 @@ export function defaultDraft(): WizardDraft {
     targets: [],
     setups: [],
     physicalPoints: [],
+    geometricRelationships: [],
     refSets: [],
     selectedRefSetId: '',
     provisional: [],
@@ -106,7 +108,7 @@ export function nomenclatureIssues(adjName: string, allNames: string[]): string[
   const issues: string[] = [];
   if (!adjName) issues.push('Empty adjustment name');
   if (adjName.length > 15) issues.push('Name longer than 15 characters (engine limit)');
-  if (/[^A-Za-z0-9_-]/.test(adjName)) issues.push('Forbidden characters for the engine (allowed: A-Z a-z 0-9 _ -)');
+  if (/[^A-Za-z0-9_]/.test(adjName)) issues.push('Forbidden characters for the engine (allowed: A-Z a-z 0-9 _)');
   if (allNames.filter((n) => n === adjName).length > 1) issues.push('Collision: same adjustment name mapped twice');
   return issues;
 }

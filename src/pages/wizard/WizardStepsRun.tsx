@@ -213,6 +213,7 @@ export function StepReview({ draft, set }: { draft: WizardDraft; set: (p: Partia
       prismSetups: draft.setups,
       targets: draft.targets,
       physicalPoints: draft.physicalPoints,
+      geometricRelationships: draft.geometricRelationships,
       referenceSetId: selectedRefSet.id,
       provisionalCoordinates: draft.provisional,
       adjustment: draft.adjustment,

@@ -65,6 +65,10 @@ describe('prism correction (workbook validation examples)', () => {
     expect(t.prismDeltaM).toBeCloseTo(0, 9);
     expect(t.finalDistanceM).toBeCloseTo(78.4189, 4);
   });
+
+  it('never applies a prism constant to reflectorless measurements', () => {
+    expect(prismDelta({ effectiveConstantM: 0.0255, constantAppliedByStationM: 0, measurementType: 'reflectorless' })).toBe(0);
+  });
 });
 
 describe('atmospheric correction', () => {

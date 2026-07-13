@@ -38,10 +38,14 @@ export function applyCountryCorrectionPreset(
     return {
       ...setup,
       prismProfileId: matchingProfile?.id ?? setup.prismProfileId,
+      measurementType: setup.measurementType ?? 'prism' as const,
+      edmMode: matchingProfile?.edmMode ?? setup.edmMode ?? defaultInstrument?.edmMode,
       effectiveConstantM,
       // This value describes the stored observation, per station-prism pair.
       // It is deliberately not a general instrument/station constant.
       constantAppliedByStationM: corrected ? effectiveConstantM : 0,
+      distanceStdErrMm: setup.distanceStdErrMm ?? defaultInstrument?.distanceStdErrMm,
+      distancePpm: setup.distancePpm ?? defaultInstrument?.distancePpm,
     };
   });
 

@@ -6,14 +6,14 @@
 
 import type {
   AdjustedCoordinate, AdjustmentAttempt, AdjustmentTemplate, CorrectionTrace,
-  EnvironmentalObservation, InstrumentProfile, ObservationUsage, PhysicalPoint,
+  EnvironmentalObservation, GeometricRelationship, InstrumentProfile, ObservationUsage, PhysicalPoint,
   QualityReport, RawObservation, ReferencePoint, Station, StationPrismSetup, TargetMapping,
 } from '../types/domain';
 import { ARCSEC2RAD, DEG2RAD } from './geometry';
 import { correctDistance, lookupEnvironment } from './corrections';
 import { resolveEngineName } from './pointIdentity';
 import {
-  adjustNetwork, type AdjustResult, type EngineConstraint, type EngineObservation,
+  adjustNetwork, type AdjustResult, type EngineConstraint, type EngineGeometricConstraint, type EngineObservation,
   type EnginePoint,
 } from './adjust';
 
@@ -25,6 +25,7 @@ export interface RunnerInput {
   prismSetups: StationPrismSetup[];
   targets: TargetMapping[];
   physicalPoints: PhysicalPoint[];     // resolves engine names (point identity)
+  geometricRelationships?: GeometricRelationship[];
   references: ReferencePoint[];
   provisional: Record<string, { e: number; n: number; h: number }>;
   adjustment: AdjustmentTemplate;
@@ -177,6 +178,22 @@ export function runAdjustment(input: RunnerInput): RunnerOutput {
   if (skippedTargets.length) {
     prepWarnings.push(`No provisional coordinates for: ${skippedTargets.join(', ')} - excluded from adjustment`);
   }
+  const physicalById = new Map(input.physicalPoints.map((point) => [point.id, point]));
+  const geometricConstraints: EngineGeometricConstraint[] = (input.geometricRelationships ?? [])
+    .filter((relation) => relation.enabled)
+    .flatMap((relation) => {
+      const fromId = physicalById.get(relation.pointAId)?.engineName;
+      const toId = physicalById.get(relation.pointBId)?.engineName;
+      if (!fromId || !toId || !seen.has(fromId) || !seen.has(toId)) {
+        prepWarnings.push(`Known geometry ${relation.id} skipped because one endpoint is not part of this epoch`);
+        return [];
+      }
+      return [{
+        id: relation.id, fromId, toId, kind: relation.kind, distanceM: relation.distanceM,
+        deltaEM: relation.deltaEM, deltaNM: relation.deltaNM, deltaHM: relation.deltaHM,
+        sigma: relation.sigmaM,
+      }];
+    });
 
   // -------------------------------------------------- engine observations --
   const engineObs: EngineObservation[] = [];
@@ -207,8 +224,8 @@ export function runAdjustment(input: RunnerInput): RunnerOutput {
     const vzSigma = Math.sqrt(
       (instrument.vzAngleStdErrArcSec * ARCSEC2RAD) ** 2 + vCent2 / (dApprox * dApprox),
     );
-    const c = instrument.distanceStdErrMm / 1000;
-    const p = instrument.distancePpm * 1e-6 * dApprox;
+    const c = (setup?.distanceStdErrMm ?? instrument.distanceStdErrMm) / 1000;
+    const p = (setup?.distancePpm ?? instrument.distancePpm) * 1e-6 * dApprox;
     let sdSigma = adj.distanceWeighting === 'additive' ? c + p : Math.sqrt(c * c + p * p);
     sdSigma = Math.sqrt(sdSigma * sdSigma + centering2);
 
@@ -247,6 +264,7 @@ export function runAdjustment(input: RunnerInput): RunnerOutput {
       chiSquareSignificance: adj.chiSquareSignificance,
       confidenceLevel: adj.confidenceLevel,
       errorPropagation: adj.errorPropagation,
+      geometricConstraints,
     });
     lastResult = result;
     attempts.push(buildAttempt(attemptNo, started, result, engineObs, currentObs, removedIds, input, prepWarnings, adj, corrections));

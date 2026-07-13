@@ -369,6 +369,8 @@ function PointIdentityTab({ config }: { config: ConfigurationVersion }) {
         targets={targets}
         physicalPoints={physicalPoints}
         provisional={config.provisionalCoordinates}
+        observations={repository.observations().filter((observation) => config.stations.some((station) => station.id === observation.stationId))}
+        setups={config.prismSetups}
         readOnly={!editing}
         user={state.user}
         onChange={(t, pp, summary) => {

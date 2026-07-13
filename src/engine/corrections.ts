@@ -40,7 +40,8 @@ export function isValidEnvironment(temperatureC?: number, pressureHPa?: number):
     && pressureHPa >= 300 && pressureHPa <= 1200;
 }
 
-export function prismDelta(setup: Pick<StationPrismSetup, 'effectiveConstantM' | 'constantAppliedByStationM'>): number {
+export function prismDelta(setup: Pick<StationPrismSetup, 'effectiveConstantM' | 'constantAppliedByStationM' | 'measurementType'>): number {
+  if (setup.measurementType === 'reflectorless') return 0;
   return setup.effectiveConstantM - setup.constantAppliedByStationM;
 }
 
@@ -133,7 +134,7 @@ export function lookupEnvironment(
 export interface CorrectionInput {
   observation: RawObservation;
   station: Station;
-  setup: Pick<StationPrismSetup, 'effectiveConstantM' | 'constantAppliedByStationM'>;
+  setup: Pick<StationPrismSetup, 'effectiveConstantM' | 'constantAppliedByStationM' | 'measurementType'>;
   instrument: InstrumentProfile;
   env: EnvLookupResult;
   datumScale: number;

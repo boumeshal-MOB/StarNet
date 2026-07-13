@@ -100,6 +100,18 @@ function validateStep(d: WizardDraft): { ok: boolean; reason?: string } {
         return { ok: false, reason: 'Single station mode allows exactly one station' };
       }
       return { ok: true };
+    case 3:
+      if (d.networkKind === 'multi-station') {
+        const stationCounts = d.stationIds.map((stationId) => d.physicalPoints.filter((point) => {
+          const contributors = d.targets.filter((target) => point.btmPrismIds.includes(target.btmPrismId));
+          const contributorStations = new Set(contributors.flatMap((target) => target.stationIds));
+          return contributorStations.has(stationId) && contributorStations.size > 1;
+        }).length);
+        if (stationCounts.some((count) => count < 2)) {
+          return { ok: false, reason: 'Confirm at least two common physical points for every station in the network' };
+        }
+      }
+      return { ok: true };
     case 4:
       return d.selectedRefSetId ? { ok: true } : { ok: false, reason: 'Select a reference set' };
     case 5:
@@ -291,7 +303,6 @@ function Step2({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraf
 // =============================================================== Step 3 ====
 function Step3({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraft>) => void }) {
   const instruments = repository.instrumentProfiles();
-  const edmModes = [...new Set(instruments.map((instrument) => instrument.edmMode))];
   const patchStation = (id: string, p: Partial<WizardDraft['stations'][number]>) => {
     const current = draft.stations.find((s) => s.id === id);
     if (!current) return;
@@ -311,7 +322,7 @@ function Step3({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraf
     <div className="space-y-4">
       {draft.stations.map((s) => (
         <Card key={s.id} title={`Station ${s.id} · Instrument and distance corrections`}>
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="grid gap-3 md:grid-cols-2">
             <Field label="Instrument template">
               <Select value={s.instrumentProfileId}
                 onChange={(v) => {
@@ -323,15 +334,14 @@ function Step3({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraf
                 }}
                 options={instruments.map((i) => ({ value: i.id, label: `${i.manufacturer} ${i.model}` }))} />
             </Field>
-            <Field label="EDM mode">
-              <Select value={s.edmMode} onChange={(v) => patchStation(s.id, { edmMode: v })}
-                options={edmModes.map((mode) => ({ value: mode, label: mode }))} />
-            </Field>
             <Field label="Instrument height" unit="m">
               <NumberInput value={s.instrumentHeightM} step={0.001}
                 onChange={(v) => patchStation(s.id, { instrumentHeightM: v })} />
             </Field>
           </div>
+          <p className="mt-2 text-2xs text-slate-500">
+            Prism, reflectorless and EDM settings are configured per target in the next step. This station template only provides fallback precision values.
+          </p>
           <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
             <div className="grid items-end gap-3 md:grid-cols-3">
               <Field label="Atmospheric correction" hint="Choose what is stored in BTM.">
