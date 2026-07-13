@@ -61,7 +61,10 @@ export function buildStations(stationIds: string[], opts?: Partial<Station>): St
  * lookup were declared as one business point at import time -> they form a
  * shared physical point (source 'import'), never merged by field name alone.
  */
-export function buildTargetsAndSetups(stationIds: string[], referenceIds?: Set<string>): {
+export function buildTargetsAndSetups(
+  stationIds: string[], referenceIds?: Set<string>,
+  options: { reuseConfirmedDemoMapping?: boolean } = {},
+): {
   targets: TargetMapping[]; setups: StationPrismSetup[]; physicalPoints: PhysicalPoint[];
 } {
   const lookup = repository.lookup().filter((r) => stationIds.includes(r.RTS));
@@ -109,29 +112,36 @@ export function buildTargetsAndSetups(stationIds: string[], referenceIds?: Set<s
       nomenclatureIssues: [],
     };
     targets.push(mapping);
-    const g = groups.get(row.AdjustmentName) ?? { rows: [], mappings: [] };
+    // AdjustmentName is not a physical-point identifier. New processings keep
+    // every station/target distinct until the user confirms common points.
+    // Only the already-configured demo processing may reuse its explicit seed.
+    const groupKey = options.reuseConfirmedDemoMapping
+      ? row.AdjustmentName : `${row.RTS}|${row.TargetName}`;
+    const g = groups.get(groupKey) ?? { rows: [], mappings: [] };
     g.rows.push(row);
     g.mappings.push(mapping);
-    groups.set(row.AdjustmentName, g);
+    groups.set(groupKey, g);
   }
 
   const physicalPoints: PhysicalPoint[] = [];
-  for (const [adjName, g] of groups) {
+  for (const [, g] of groups) {
+    const adjName = g.rows[0].AdjustmentName;
     const stationsOf = [...new Set(g.mappings.map((m) => m.stationIds[0]))];
     const shared = stationsOf.length > 1;
     const pp: PhysicalPoint = {
       id: nextId('pp'),
-      label: adjName,
-      engineName: adjName,
+      label: options.reuseConfirmedDemoMapping ? adjName : g.rows[0].TargetName,
+      engineName: options.reuseConfirmedDemoMapping
+        ? adjName : g.rows[0].TargetName.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 15),
       role: g.mappings[0].role,
       outputName: g.rows[0].OutputName,
       btmPrismIds: g.mappings.map((m) => m.btmPrismId),
       state: shared ? 'shared' : 'resolved',
-      source: shared ? 'import' : 'default',
+      source: shared ? 'existing' : 'default',
       rationale: shared
-        ? `Business id "${adjName}" declared for ${stationsOf.join(' and ')} in the BTM lookup import`
+        ? `Confirmed mapping reused from the configured demonstration network (${stationsOf.join(' and ')})`
         : undefined,
-      decidedBy: shared ? 'import' : undefined,
+      decidedBy: shared ? 'demo configuration' : undefined,
       decidedAt: shared ? new Date(FIXTURE_START).toISOString() : undefined,
     };
     physicalPoints.push(pp);
@@ -210,7 +220,9 @@ export function seedDemo(): SeedResult {
   const refSets = repository.referenceSetsFromHeader(procId, DEMO_USER, (id) => id.startsWith('REF'));
   const stationIds = ['ATS34', 'ATS35', 'ATS36'];
   const stations = buildStations(stationIds);
-  const { targets: aliasTargets, setups, physicalPoints } = buildTargetsAndSetups(stationIds);
+  const { targets: aliasTargets, setups, physicalPoints } = buildTargetsAndSetups(
+    stationIds, undefined, { reuseConfirmedDemoMapping: true },
+  );
 
   const initWindowFrom = FIXTURE_START;
   const initWindowTo = FIXTURE_START + 2 * 3600000;

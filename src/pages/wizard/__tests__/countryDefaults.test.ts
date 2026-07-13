@@ -25,7 +25,7 @@ describe('country distance correction presets', () => {
       setup.constantAppliedByStationM === setup.effectiveConstantM)).toBe(true);
   });
 
-  it('UK keeps Rob lookup constants and applies them once to raw distances', () => {
+  it('UK uses the supplied Leica lookup constants once on raw slope distances', () => {
     const result = preset('country-uk');
     const constants = [...new Set(result.setups.map((setup) => setup.effectiveConstantM))].sort();
     expect(constants).toEqual([0.0089, 0.0265]);
@@ -34,7 +34,8 @@ describe('country distance correction presets', () => {
       repository.prismProfiles().find((profile) => profile.id === id)!.effectiveConstantM).sort();
     expect(catalogConstants).toEqual([0, 0.0089, 0.0265, 0.03]);
     expect(result.setups.every((setup) => setup.constantAppliedByStationM === 0)).toBe(true);
-    expect(result.setups.every((setup) => setup.prismProfileId.startsWith('prism-rob-'))).toBe(true);
+    expect(result.stations[0].instrumentProfileId).toBe('inst-tm50');
+    expect(result.setups.every((setup) => setup.prismProfileId.startsWith('prism-uk-'))).toBe(true);
     expect(result.stations[0].atmosphericMode).toBe('automatic');
   });
 });

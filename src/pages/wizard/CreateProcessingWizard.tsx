@@ -62,12 +62,11 @@ export function CreateProcessingWizard() {
         {draft.step === 1 && <Step2 draft={draft} set={set} />}
         {draft.step === 2 && <Step3 draft={draft} set={set} />}
         {draft.step === 3 && <StepTargets draft={draft} set={set} />}
-        {draft.step === 4 && <StepReferences draft={draft} set={set} />}
-        {draft.step === 5 && <StepInitial draft={draft} set={set} />}
-        {draft.step === 6 && <StepAdjustment draft={draft} set={set} />}
-        {draft.step === 7 && <StepRun draft={draft} set={set} />}
-        {draft.step === 8 && <StepOutput draft={draft} set={set} />}
-        {draft.step === 9 && <StepReview draft={draft} set={set} />}
+        {draft.step === 4 && <div className="space-y-4"><StepReferences draft={draft} set={set} /><StepInitial draft={draft} set={set} /></div>}
+        {draft.step === 5 && <StepAdjustment draft={draft} set={set} />}
+        {draft.step === 6 && <StepRun draft={draft} set={set} />}
+        {draft.step === 7 && <StepOutput draft={draft} set={set} />}
+        {draft.step === 8 && <StepReview draft={draft} set={set} />}
       </div>
 
       <div className="fixed bottom-0 left-60 right-0 z-20 flex items-center gap-2 border-t border-slate-200 bg-white/95 px-7 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.06)] backdrop-blur xl:px-9">
@@ -113,8 +112,7 @@ function validateStep(d: WizardDraft): { ok: boolean; reason?: string } {
       }
       return { ok: true };
     case 4:
-      return d.selectedRefSetId ? { ok: true } : { ok: false, reason: 'Select a reference set' };
-    case 5:
+      if (!d.selectedRefSetId) return { ok: false, reason: 'Choose known references or a local anchor' };
       return d.provisionalSaved ? { ok: true } : { ok: false, reason: 'Compute and save provisional coordinates first' };
     default:
       return { ok: true };
@@ -302,7 +300,12 @@ function Step2({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraf
 
 // =============================================================== Step 3 ====
 function Step3({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraft>) => void }) {
-  const instruments = repository.instrumentProfiles();
+  const allInstruments = repository.instrumentProfiles();
+  const preferredManufacturer = draft.countryTemplateId === 'country-fr' ? 'Topcon'
+    : draft.countryTemplateId === 'country-uk' ? 'Leica' : undefined;
+  const usedInstrumentIds = new Set(draft.stations.map((station) => station.instrumentProfileId));
+  const instruments = allInstruments.filter((instrument) => !preferredManufacturer
+    || instrument.manufacturer === preferredManufacturer || usedInstrumentIds.has(instrument.id));
   const patchStation = (id: string, p: Partial<WizardDraft['stations'][number]>) => {
     const current = draft.stations.find((s) => s.id === id);
     if (!current) return;

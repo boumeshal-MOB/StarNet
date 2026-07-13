@@ -168,15 +168,16 @@ observations` requise par l'Input Builder serveur.
 
 `MPO` est une **nomenclature France** liée à la base France. Elle ne doit jamais être générée
 pour le template UK ni utilisée comme préfixe générique de point physique. Le template UK
-utilise les noms et `AdjustmentName` de la Lookup Table fournie dans le contexte Rob/legacy,
+utilise les noms et `AdjustmentName` de la Lookup Table fournie,
 par exemple `360_301_34` ou `L_ANL1100_329`.
 
 ### Règles de génération du nom moteur
 
 1. Le `physicalPointId` est un identifiant interne opaque et stable, indépendant du pays, du
    nom terrain et du type de réflecteur.
-2. Si la base/Lookup fournit un `AdjustmentName` valide, unique dans le processing et confirmé
-   pour ce point physique, il devient par défaut l'`engineName`.
+2. Un `AdjustmentName` ne prouve jamais qu'un point est commun. Il ne devient l'`engineName`
+   partagé que si un mapping physique distinct et déjà confirmé existe ; sinon chaque cible
+   conserve un nom moteur distinct jusqu'à la validation utilisateur.
 3. Si plusieurs cibles BTM correspondent au même point physique, toutes leurs observations
    utilisent **un seul** `engineName`, même si leurs noms source sont différents.
 4. Si un nom est absent, interdit, trop long ou déjà utilisé par un autre point, BTM génère un

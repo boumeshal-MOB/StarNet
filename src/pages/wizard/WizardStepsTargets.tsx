@@ -401,10 +401,14 @@ function BatchEdit({ onApply, prisms }: {
 export function StepReferences({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraft>) => void }) {
   const activeSet = draft.refSets.find((r) => r.id === draft.selectedRefSetId);
   const [compareId, setCompareId] = useState('');
+  const [newReferenceId, setNewReferenceId] = useState('');
   const compareSet = draft.refSets.find((r) => r.id === compareId);
+  const localSet = draft.refSets.find((setItem) => setItem.points.length === 0);
+  const knownSets = draft.refSets.filter((setItem) => setItem.points.length > 0);
 
   const geometry = useMemo(() => {
-    if (!activeSet) return { ok: false, messages: ['No reference set selected'] };
+    if (!activeSet) return { ok: false, messages: ['No initialization datum selected'] };
+    if (activeSet.points.length === 0) return { ok: true, messages: [], constrained: 0, spread: 0 };
     const messages: string[] = [];
     const constrained = activeSet.points.reduce((acc, p) =>
       acc + (p.modeE !== 'free' ? 1 : 0) + (p.modeN !== 'free' ? 1 : 0) + (p.modeH !== 'free' ? 1 : 0), 0);
@@ -441,25 +445,57 @@ export function StepReferences({ draft, set }: { draft: WizardDraft; set: (p: Pa
     set({ refSets: [...draft.refSets, copy], selectedRefSetId: copy.id });
   };
 
+  const chooseMode = (mode: WizardDraft['initMode']) => {
+    const selectedRefSetId = mode === 'local-anchor'
+      ? localSet?.id ?? draft.selectedRefSetId
+      : (activeSet?.points.length ? activeSet.id : knownSets[0]?.id ?? draft.selectedRefSetId);
+    set({ initMode: mode, selectedRefSetId, provisionalSaved: false });
+  };
+
+  const availableReferenceIds = [...new Set(draft.targets.map((target) =>
+    resolveEngineName(target, draft.physicalPoints)))]
+    .filter((id) => !activeSet?.points.some((point) => point.pointId === id));
+
+  const addReference = () => {
+    if (!activeSet || !newReferenceId) return;
+    const point: ReferencePoint = {
+      pointId: newReferenceId, easting: 0, northing: 0, height: 0,
+      sigmaE: 0.001, sigmaN: 0.001, sigmaH: 0.001,
+      modeE: 'weak', modeN: 'weak', modeH: 'weak',
+      source: 'Manual initialization input', comment: 'Coordinates must be completed before calculation',
+    };
+    set({ refSets: draft.refSets.map((item) => item.id === activeSet.id
+      ? { ...item, points: [...item.points, point] } : item), provisionalSaved: false });
+    setNewReferenceId('');
+  };
+
   if (!activeSet) return <Callout tone="warning">Import reference sets first (step 2 loads them from the BTM header block).</Callout>;
 
   return (
     <div className="space-y-4">
-      <Card title="Step 5 - References and Constraints"
-        actions={
-          <div className="flex gap-2">
-            <Select value={draft.selectedRefSetId} onChange={(v) => set({
-              selectedRefSetId: v,
-              initMode: draft.refSets.find((item) => item.id === v)?.points.length === 0
-                ? 'local-anchor' : draft.initMode,
-            })}
-              options={draft.refSets.map((r) => ({ value: r.id, label: `${r.name} (from ${r.validFrom.slice(0, 10)})` }))} />
-            <Button size="xs" onClick={duplicateSet}>Duplicate set</Button>
-          </div>
-        }>
-        {activeSet.points.length === 0 && (
-          <Callout tone="info">Local datum selected: no external reference coordinates will be constrained. In the next step, choose the fixed anchor station and its orientation.</Callout>
-        )}
+      <Card title="Step 5 - Initialisation datum">
+        <Callout tone="info">
+          Choose one method: provide known reference coordinates, or fix one station and calculate the network in a local coordinate system. Everything needed for the first calculation is grouped in this step.
+        </Callout>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <Field label="Coordinate source"><Select value={draft.initMode} onChange={(value) => chooseMode(value as WizardDraft['initMode'])}
+            options={[{ value: 'known-references', label: 'Use known reference coordinates' },
+              { value: 'local-anchor', label: 'No coordinates — fix one station' }]} /></Field>
+          {draft.initMode === 'known-references' && <Field label="Reference set"><div className="flex gap-2">
+            <Select value={draft.selectedRefSetId} onChange={(value) => set({ selectedRefSetId: value, provisionalSaved: false })}
+              options={knownSets.map((item) => ({ value: item.id, label: `${item.name} (from ${item.validFrom.slice(0, 10)})` }))} />
+            <Button size="xs" onClick={duplicateSet}>Duplicate</Button>
+          </div></Field>}
+        </div>
+        {draft.initMode === 'local-anchor' ? (
+          <Callout tone="success">No external reference coordinates are required. Configure the fixed station coordinates and orientation below; 0 / 0 / 0 / 0 is accepted for a local system.</Callout>
+        ) : <>
+        <div className="mt-3 flex flex-wrap items-end gap-2 rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200">
+          <Field label="Add a reference point"><Select value={newReferenceId} onChange={setNewReferenceId}
+            options={[{ value: '', label: 'Select a target…' }, ...availableReferenceIds.map((id) => ({ value: id, label: id }))]} /></Field>
+          <Button size="xs" disabled={!newReferenceId} onClick={addReference}>Add reference</Button>
+          <span className="text-2xs text-slate-500">Coordinates and component constraints remain editable before calculation.</span>
+        </div>
         <TableWrap maxH="max-h-72">
           <thead>
             <tr>
@@ -472,9 +508,12 @@ export function StepReferences({ draft, set }: { draft: WizardDraft; set: (p: Pa
             {activeSet.points.map((p) => (
               <tr key={p.pointId}>
                 <td className="font-medium">{p.pointId}</td>
-                <td>{p.easting.toFixed(4)}</td>
-                <td>{p.northing.toFixed(4)}</td>
-                <td>{p.height.toFixed(4)}</td>
+                <td><input type="number" step="0.0001" className="input !w-28 !px-1 !py-0.5 !text-xs" value={p.easting}
+                  onChange={(event) => patchPoint(activeSet.id, p.pointId, { easting: Number(event.target.value) })} /></td>
+                <td><input type="number" step="0.0001" className="input !w-28 !px-1 !py-0.5 !text-xs" value={p.northing}
+                  onChange={(event) => patchPoint(activeSet.id, p.pointId, { northing: Number(event.target.value) })} /></td>
+                <td><input type="number" step="0.0001" className="input !w-24 !px-1 !py-0.5 !text-xs" value={p.height}
+                  onChange={(event) => patchPoint(activeSet.id, p.pointId, { height: Number(event.target.value) })} /></td>
                 {(['E', 'N', 'H'] as const).map((c) => {
                   const modeKey = `mode${c}` as 'modeE' | 'modeN' | 'modeH';
                   const sigKey = `sigma${c}` as 'sigmaE' | 'sigmaN' | 'sigmaH';
@@ -513,8 +552,9 @@ export function StepReferences({ draft, set }: { draft: WizardDraft; set: (p: Pa
             </Callout>
           )}
         </div>
+        </>}
       </Card>
-      <Card title="Compare two sets" actions={
+      {draft.initMode === 'known-references' && <Card title="Compare two reference sets" actions={
         <Select value={compareId} onChange={setCompareId}
           options={[{ value: '', label: 'Select a set to compare...' },
             ...draft.refSets.filter((r) => r.id !== activeSet.id)
@@ -540,7 +580,7 @@ export function StepReferences({ draft, set }: { draft: WizardDraft; set: (p: Pa
             </tbody>
           </TableWrap>
         ) : <p className="text-xs text-slate-400">Pick a second set to see the coordinate differences.</p>}
-      </Card>
+      </Card>}
     </div>
   );
 }
