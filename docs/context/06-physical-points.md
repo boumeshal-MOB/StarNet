@@ -30,7 +30,7 @@ Station BTM ─→ cible BTM (TargetMapping.btmPrismId, stable, par station)
   prismes contributeurs (station + btmPrismId + rawName)` ; aussi dans `inputSnapshot`.
 - `AdjustedCoordinate.physicalPointId` : la coordonnée ajustée remonte au point physique.
 
-## Règles implémentées (invariants)
+## Invariants fonctionnels
 
 1. **Distinct par défaut** : chaque cible BTM naît avec son propre point (`source: default`).
    Un nom identique n'est jamais une preuve d'identité. En France, par exemple, `MPO001`
@@ -57,6 +57,101 @@ Station BTM ─→ cible BTM (TargetMapping.btmPrismId, stable, par station)
    (affichées, jamais de rupture automatique de liaison).
 7. **Isolation par run/projet** : la résolution utilise toujours la configuration du run ;
    les mêmes noms moteur peuvent exister dans des processings différents sans collision.
+
+## Initialisation manuelle et vérification intelligente
+
+Pour un nouveau réseau sans mapping antérieur, BTM ne tente pas de découvrir tous les points
+communs à partir de coordonnées globales qui n'existent pas encore. L'utilisateur fournit
+d'abord un petit nombre de correspondances certaines entre stations.
+
+### Nombre minimal de points communs
+
+Une station totale nivelée produit un repère local dont l'échelle et la verticale sont connues,
+mais dont la translation 3D et l'orientation horizontale restent inconnues : quatre degrés de
+liberté (`dE`, `dN`, `dH`, rotation horizontale).
+
+| Contexte | Minimum mathématique | Règle BTM |
+|---|---:|---|
+| Position et orientation de la station déjà connues | 0 | Aucun point commun requis pour placer cette station |
+| Orientation connue, translation inconnue | 1 point 3D | Autorisé si l'orientation est une donnée contrôlée |
+| Station nivelée, orientation horizontale inconnue | 2 points distincts avec séparation horizontale | Minimum pour lancer une transformation provisoire |
+| Contrôle robuste du mapping | 3 points non alignés ou plus | Minimum recommandé et valeur par défaut pour valider automatiquement |
+| Orientation 3D totalement libre | 3 points non colinéaires | Cas avancé ; hors hypothèse normale d'une station nivelée |
+
+Avec un seul point commun et une orientation inconnue, la deuxième station peut encore tourner
+autour de ce point : le réseau n'est pas déterminé. Deux points lèvent cette rotation, mais ne
+fournissent aucune redondance pour détecter une mauvaise correspondance. BTM marque donc un
+appariement basé sur deux points `Weak geometry` et demande par défaut un troisième point avant
+validation. Le contrôle de rang du réseau reste l'autorité finale.
+
+### Action `Check common points`
+
+1. L'utilisateur sélectionne une paire de stations.
+2. Il saisit ou sélectionne au minimum deux correspondances certaines ; l'interface recommande
+   trois points bien distribués.
+3. BTM construit un nuage local par station depuis Hz/Vz/Sd, sans créer de coordonnées globales
+   définitives.
+4. BTM calcule la transformation horizontale + translation 3D à partir des correspondances
+   manuelles.
+5. Le bouton `Check` recherche uniquement des correspondances supplémentaires cohérentes avec
+   cette transformation.
+6. Les candidats mutuellement les plus proches et situés dans les tolérances configurées sont
+   affichés dans un tableau de validation.
+7. L'utilisateur peut retirer une proposition, conserver les points distincts ou confirmer le
+   groupe. Aucun candidat géométrique n'est lié automatiquement.
+
+Les contrôles utilisent au minimum : résidu horizontal, résidu vertical, distance 3D, unicité
+un-à-un, stabilité de la transformation et distribution géométrique des points. Les tolérances
+sont séparées en horizontal/vertical et doivent tenir compte des incertitudes des observations ;
+un simple seuil fixe sur la distance 3D ne suffit pas.
+
+### Tableau de mapping simplifié
+
+Le tableau principal `Shared physical points` contient seulement :
+
+- les groupes confirmés observés depuis plusieurs stations ;
+- les propositions en attente produites par `Check` ;
+- leur résidu, source, état et nombre de stations contributrices.
+
+Les cibles non communes ne sont pas mélangées dans ce tableau. Elles restent visibles dans le
+tableau normal `Targets & Measurement Setups` et reçoivent chacune un `physicalPointId` interne
+distinct, masqué dans le parcours standard. Cette séparation évite une liste de centaines de
+« mappings » triviaux qui rendrait les vrais points de connexion illisibles.
+
+## Contraintes entre points distincts : lignes de base et vecteurs
+
+Deux points physiques différents peuvent être reliés par une relation géométrique connue. Cette
+relation ne doit jamais les fusionner sous un même `physicalPointId`.
+
+Il faut distinguer :
+
+| Type | Valeur connue | Nombre de contraintes scalaires |
+|---|---|---:|
+| Longueur de ligne de base | distance inclinée ou horizontale | 1 |
+| Différence de hauteur | `dH` | 1 |
+| Azimut + distance | direction horizontale et longueur | 2 ou plus selon le modèle |
+| Vecteur 3D | `dE`, `dN`, `dH` dans un repère défini | 3 |
+
+Une « distance constante connue » est une contrainte scalaire, pas un vecteur complet. Une seule
+distance entre deux composantes du réseau ne détermine pas leur translation et leur rotation
+relatives. Elle peut renforcer une géométrie déjà connectée ou contribuer avec plusieurs autres
+contraintes indépendantes, mais elle ne remplace pas à elle seule les points communs.
+
+L'interface présente ces relations dans un tableau séparé `Known geometric relationships` :
+
+- Physical Point A et Physical Point B, nécessairement distincts ;
+- type de relation ;
+- valeur et unité ;
+- écart-type/tolérance ;
+- repère du vecteur lorsqu'il existe ;
+- période de validité ;
+- source et justification ;
+- utilisation pour les coordonnées initiales, l'ajustement ou le contrôle seulement.
+
+Une longueur connue devient une observation de distance entre deux noms moteur distincts dans
+le `.DAT`. Un vecteur 3D n'est exporté que si le format et la licence moteur ciblés le supportent ;
+sinon il est converti en observations supportées ou signalé comme non exportable. Dans tous les
+cas, le snapshot conserve la relation originale.
 
 ## Correspondance Star*Net
 
@@ -146,3 +241,16 @@ coordonnées à ~65 m), liaisons/déliaisons sans orphelin ni collision, détect
 d'engine name, réseau déconnecté bloqué, snapshot résolu. Scénarios 3 (suggestion par
 proximité), 4 (changement dans le temps = nouvelle version) et 6 (isolation) sont couverts
 par le panneau + le versionnement de configuration existant.
+
+## Écart avec la maquette actuelle
+
+La maquette implémente déjà les identités distinctes par défaut, la liaison/déliaison manuelle,
+les suggestions après coordonnées provisoires, la validation des collisions et le mapping
+inverse des résultats. Restent à implémenter selon ce document :
+
+- l'initialisation manuelle par deux points minimum avant `Check` ;
+- la transformation locale et les propositions supplémentaires sans coordonnées globales ;
+- le tableau limité aux seuls points réellement partagés ;
+- le statut `Weak geometry` avec exactement deux points ;
+- le tableau séparé des relations géométriques et leur export moteur ;
+- les règles de tolérance H/V et le contrôle de distribution avant validation groupée.
