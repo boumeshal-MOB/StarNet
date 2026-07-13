@@ -54,7 +54,7 @@ export function engineNameIssues(name: string, allEngineNames: string[]): string
   const issues: string[] = [];
   if (!name) issues.push('empty engine name');
   if (name.length > 15) issues.push('engine name longer than 15 characters');
-  if (/[^A-Za-z0-9_-]/.test(name)) issues.push('forbidden characters for the engine');
+  if (/[^A-Za-z0-9_]/.test(name)) issues.push('forbidden characters for the engine');
   return issues;
 }
 

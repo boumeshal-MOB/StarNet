@@ -78,10 +78,14 @@ export function buildTargetsAndSetups(stationIds: string[], referenceIds?: Set<s
     setups.push({
       stationId: row.RTS,
       targetKey: row.TargetName,
+      measurementType: 'prism',
+      edmMode: undefined,
       prismProfileId: prism?.id ?? 'prism-std0',
       effectiveConstantM: row.PrismConstant,
       constantAppliedByStationM: 0,
       targetHeightM: row.TargetHeight,
+      distanceStdErrMm: undefined,
+      distancePpm: undefined,
       source: 'template',
     });
     const mapping: TargetMapping = {

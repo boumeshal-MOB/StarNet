@@ -7,7 +7,7 @@ import {
 } from '../../components/ui';
 import { repository } from '../../data/repository';
 import { fmtMm } from '../../lib/format';
-import type { ReferencePoint, TargetMapping } from '../../types/domain';
+import type { GeometricRelationship, ReferencePoint, TargetMapping } from '../../types/domain';
 import { PointIdentityPanel } from '../../components/PointIdentityPanel';
 import { resolveEngineName, targetSourceKey } from '../../engine/pointIdentity';
 import { COUNTRY_TEMPLATES } from '../../data/templates';
@@ -63,6 +63,7 @@ export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Parti
         ? { ...t, ...p, source: 'manual-override' as const } : t),
       setups: prism ? draft.setups.map((setup) => selectedSourceKeys.has(targetSourceKey(setup.stationId, setup.targetKey))
         ? { ...setup, prismProfileId: prism.id, effectiveConstantM: prism.effectiveConstantM,
+            measurementType: 'prism' as const, edmMode: prism.edmMode,
             constantAppliedByStationM: appliedByDefault(prism.effectiveConstantM), source: 'manual-override' as const }
         : setup) : draft.setups,
     });
@@ -89,7 +90,7 @@ export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Parti
     const newPoints: typeof draft.physicalPoints = [];
     const newSetups: typeof draft.setups = [];
     newOnes.forEach(({ stationId, rawName }, i) => {
-      const baseName = rawName.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 15);
+      const baseName = rawName.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 15);
       const taken = new Set([...draft.physicalPoints, ...newPoints].map((pp) => pp.engineName));
       let adjustmentName = baseName || 'PT';
       let suffix = 2;
@@ -132,6 +133,8 @@ export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Parti
       newSetups.push({
         stationId,
         targetKey: rawName,
+        measurementType: 'prism',
+        edmMode: defaultPrism?.edmMode,
         prismProfileId: defaultPrism?.id ?? 'prism-std0',
         effectiveConstantM: defaultPrism?.effectiveConstantM ?? 0,
         constantAppliedByStationM: appliedByDefault(defaultPrism?.effectiveConstantM ?? 0),
@@ -154,7 +157,7 @@ export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Parti
 
   return (
     <div className="space-y-4">
-    <Card title="Step 4 - Targets and Prisms"
+    <Card title="Step 4 - Targets and measurement setups"
       actions={
         <div className="flex gap-2">
           <Button size="xs" onClick={detectNew}>Detect new targets</Button>
@@ -187,16 +190,23 @@ export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Parti
             {advancedOpen && <th>Adjustment label</th>}
             <th>Engine point ID</th>
             {advancedOpen && <th>BTM output name</th>}
-            <th>Role</th><th>Prism template</th>
-            {advancedOpen && <><th>Grade</th><th>Height (m)</th><th>Required const (mm)</th><th>Already in stored Sd (mm)</th></>}
-            <th>Prism correction</th><th>Initial coords</th><th>Include</th><th>Publish</th>
+            <th>Role</th><th>Measurement</th><th>Target setup</th>
+            {advancedOpen && <><th>EDM program</th><th>Height (m)</th><th>Distance σ</th><th>PPM</th><th>Required const (mm)</th><th>Already in stored Sd (mm)</th></>}
+            <th>Distance correction</th><th>Initial coords</th><th>Include</th><th>Publish</th>
             {advancedOpen && <th>Source</th>}
           </tr>
         </thead>
         <tbody>
           {rows.map((t) => {
             const setup = draft.setups.find((s) => s.targetKey === t.rawName && t.stationIds.includes(s.stationId));
-            const delta = (setup?.effectiveConstantM ?? 0) - (setup?.constantAppliedByStationM ?? 0);
+            const measurementType = setup?.measurementType ?? 'prism';
+            const delta = measurementType === 'reflectorless' ? 0
+              : (setup?.effectiveConstantM ?? 0) - (setup?.constantAppliedByStationM ?? 0);
+            const patchSetup = (patch: Partial<NonNullable<typeof setup>>) => {
+              if (!setup) return;
+              set({ setups: draft.setups.map((item) => item === setup
+                ? { ...item, ...patch, source: 'manual-override' as const } : item) });
+            };
             return (
               <tr key={t.id} className={t.reviewStatus === 'to-review' ? 'bg-amber-50/50' : ''}>
                 <td><input type="checkbox" checked={selected.has(t.id)}
@@ -227,8 +237,13 @@ export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Parti
                     <option value="auxiliary">Auxiliary</option>
                   </select>
                 </td>
+                <td><select className="input !w-36 !px-1 !py-0.5 !text-xs" value={measurementType}
+                  onChange={(e) => patchSetup({ measurementType: e.target.value as NonNullable<typeof setup>['measurementType'],
+                    ...(e.target.value === 'reflectorless' ? { effectiveConstantM: 0, constantAppliedByStationM: 0, targetHeightM: 0 } : {}) })}>
+                  <option value="prism">Prism</option><option value="reflective-sheet">Reflective sheet</option><option value="reflectorless">Reflectorless / laser</option>
+                </select></td>
                 <td>
-                  <select className="input !w-40 !px-1 !py-0.5 !text-xs" value={t.prismProfileId}
+                  {measurementType === 'reflectorless' ? <Badge>None</Badge> : <select className="input !w-40 !px-1 !py-0.5 !text-xs" value={t.prismProfileId}
                     onChange={(e) => {
                       const prism = prisms.find((p) => p.id === e.target.value);
                       patchTarget(t.id, { prismProfileId: e.target.value });
@@ -236,17 +251,25 @@ export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Parti
                         set({
                           setups: draft.setups.map((s) => s.targetKey === t.rawName && t.stationIds.includes(s.stationId)
                             ? { ...s, prismProfileId: prism.id, effectiveConstantM: prism.effectiveConstantM,
+                                edmMode: prism.edmMode,
                                 constantAppliedByStationM: appliedByDefault(prism.effectiveConstantM), source: 'manual-override' }
                             : s),
                         });
                       }
                     }}>
                     {prisms.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
+                  </select>}
                 </td>
                 {advancedOpen && <>
-                  <td>{t.grade ?? '-'}</td>
-                  <td>{t.targetHeightM.toFixed(3)}</td>
+                  <td><input className="input !w-28 !px-1 !py-0.5 !text-xs" value={setup?.edmMode ?? ''}
+                    placeholder={draft.stations.find((station) => setup?.stationId === station.id)?.edmMode ?? 'Instrument default'}
+                    onChange={(e) => patchSetup({ edmMode: e.target.value })} /></td>
+                  <td><input className="input !w-20 !px-1 !py-0.5 !text-right !text-xs" type="number" step="0.001"
+                    value={setup?.targetHeightM ?? t.targetHeightM} onChange={(e) => patchSetup({ targetHeightM: Number(e.target.value) })} /></td>
+                  <td><input className="input !w-20 !px-1 !py-0.5 !text-right !text-xs" type="number" step="0.1"
+                    value={setup?.distanceStdErrMm ?? ''} placeholder="default" onChange={(e) => patchSetup({ distanceStdErrMm: e.target.value === '' ? undefined : Number(e.target.value) })} /></td>
+                  <td><input className="input !w-20 !px-1 !py-0.5 !text-right !text-xs" type="number" step="0.1"
+                    value={setup?.distancePpm ?? ''} placeholder="default" onChange={(e) => patchSetup({ distancePpm: e.target.value === '' ? undefined : Number(e.target.value) })} /></td>
                   <td className="text-right">{fmtMm(setup?.effectiveConstantM, 1)}</td>
                   <td className="text-right">
                     {setup ? <input className="input !w-20 !px-1 !py-0.5 !text-right !text-xs"
@@ -258,7 +281,7 @@ export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Parti
                 </>}
                 <td className="text-right font-medium">
                   {Math.abs(delta) < 1e-9
-                    ? <Badge tone="Success">Already corrected</Badge>
+                    ? <Badge tone="Success">{measurementType === 'reflectorless' ? 'No prism correction' : 'Already corrected'}</Badge>
                     : <Badge tone="Ready">BTM {delta > 0 ? '+' : ''}{fmtMm(delta, 1)} mm</Badge>}
                 </td>
                 <td><Badge tone={t.initialCoordinateStatus === 'computed' ? 'Success' : 'Draft'}>{t.initialCoordinateStatus}</Badge></td>
@@ -273,7 +296,7 @@ export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Parti
         </tbody>
       </TableWrap>
       <p className="mt-2 text-2xs text-slate-500">
-        Prism correction is resolved per BTM target. The country template only supplies defaults; use Advanced options for an exception on a specific station-prism pair. The nomenclature controller keeps the raw field name untouched, validates the internal engine
+        Measurement technology, EDM program, target constant and precision are resolved per station-target pair. A single instrument may therefore mix prisms, reflective sheets and reflectorless observations. The country template only supplies defaults; use Advanced options for an exception. The nomenclature controller keeps the raw field name untouched, validates the internal engine
         name (length, characters, collisions - future Star*Net compatibility) and the BTM output name.
         New targets found in the data are added as <em>To review</em> and never auto-included.
       </p>
@@ -287,17 +310,60 @@ export function StepTargets({ draft, set }: { draft: WizardDraft; set: (p: Parti
       targets={draft.targets}
       physicalPoints={draft.physicalPoints}
       provisional={draft.provisional}
+      observations={repository.observations().filter((observation) => draft.stationIds.includes(observation.stationId))}
+      setups={draft.setups}
       user="wizard"
       onChange={(targets, physicalPoints) => set({ targets, physicalPoints, provisionalSaved: false })}
     />
-    {draft.provisional.length === 0 && (
-      <Callout tone="info">
-        Proximity suggestions between stations appear after step 6 (Initial Coordinates) computes
-        independent estimates per prism. You can come back to this step to confirm links.
-      </Callout>
-    )}
+    <KnownGeometryPanel draft={draft} set={set} />
     </div>
   );
+}
+
+function KnownGeometryPanel({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraft>) => void }) {
+  const [open, setOpen] = useState(false);
+  const [pointAId, setPointAId] = useState('');
+  const [pointBId, setPointBId] = useState('');
+  const [kind, setKind] = useState<GeometricRelationship['kind']>('slope-distance');
+  const [value, setValue] = useState(0);
+  const [deltaN, setDeltaN] = useState(0);
+  const [deltaH, setDeltaH] = useState(0);
+  const [sigmaMm, setSigmaMm] = useState(1);
+  const points = draft.physicalPoints;
+  return <Card title="Known geometry (optional)" actions={<Button size="xs" onClick={() => setOpen(!open)}>{open ? 'Hide' : 'Add a baseline or vector'}</Button>}>
+    <p className="text-xs text-slate-500">
+      A known distance or vector links two <strong>different</strong> physical points. It is a surveyed constraint, not proof that the points are identical, and it does not replace the common-point mapping needed to orient two station frames.
+    </p>
+    {open && <div className="mt-3 grid items-end gap-3 md:grid-cols-7">
+      <Field label="Point A"><Select value={pointAId} onChange={setPointAId} options={[{ value: '', label: 'Select…' }, ...points.map((point) => ({ value: point.id, label: point.engineName }))]} /></Field>
+      <Field label="Point B"><Select value={pointBId} onChange={setPointBId} options={[{ value: '', label: 'Select…' }, ...points.filter((point) => point.id !== pointAId).map((point) => ({ value: point.id, label: point.engineName }))]} /></Field>
+      <Field label="Relationship"><Select value={kind} onChange={(next) => setKind(next as GeometricRelationship['kind'])} options={[
+        { value: 'slope-distance', label: 'Slope distance' }, { value: 'horizontal-distance', label: 'Horizontal distance' },
+        { value: 'height-difference', label: 'Height difference' }, { value: 'vector-3d', label: '3D vector (advanced)' },
+      ]} /></Field>
+      <Field label={kind === 'height-difference' ? 'ΔH' : kind === 'vector-3d' ? 'ΔE' : 'Distance'} unit="m"><NumberInput value={value} step={0.001} onChange={setValue} /></Field>
+      {kind === 'vector-3d' && <><Field label="ΔN" unit="m"><NumberInput value={deltaN} step={0.001} onChange={setDeltaN} /></Field>
+        <Field label="ΔH" unit="m"><NumberInput value={deltaH} step={0.001} onChange={setDeltaH} /></Field></>}
+      <div className="flex items-end gap-2"><Field label="σ" unit="mm"><NumberInput value={sigmaMm} step={0.1} onChange={(next) => setSigmaMm(Math.max(0.01, next))} /></Field>
+        <Button size="xs" variant="primary" disabled={!pointAId || !pointBId || pointAId === pointBId
+          || ((kind === 'slope-distance' || kind === 'horizontal-distance') && value <= 0)
+          || (kind === 'vector-3d' && value === 0 && deltaN === 0 && deltaH === 0)} onClick={() => {
+          const relation: GeometricRelationship = {
+            id: `geometry-${Date.now()}`, pointAId, pointBId, kind, sigmaM: sigmaMm / 1000, enabled: true, source: 'manual',
+            ...(kind === 'height-difference' ? { deltaHM: value }
+              : kind === 'vector-3d' ? { deltaEM: value, deltaNM: deltaN, deltaHM: deltaH }
+                : { distanceM: value }),
+          };
+          set({ geometricRelationships: [...draft.geometricRelationships, relation] }); setPointAId(''); setPointBId(''); setValue(0); setDeltaN(0); setDeltaH(0);
+        }}>Add</Button></div>
+    </div>}
+    {draft.geometricRelationships.length > 0 && <TableWrap maxH="max-h-48"><thead><tr><th>Point A</th><th>Point B</th><th>Type</th><th>Value</th><th>σ</th><th></th></tr></thead>
+      <tbody>{draft.geometricRelationships.map((relation) => <tr key={relation.id}><td>{points.find((point) => point.id === relation.pointAId)?.engineName}</td>
+        <td>{points.find((point) => point.id === relation.pointBId)?.engineName}</td><td>{relation.kind}</td>
+        <td>{relation.kind === 'vector-3d' ? `(${relation.deltaEM?.toFixed(3)}, ${relation.deltaNM?.toFixed(3)}, ${relation.deltaHM?.toFixed(3)}) m`
+          : `${(relation.distanceM ?? relation.deltaHM ?? 0).toFixed(3)} m`}</td><td>{fmtMm(relation.sigmaM, 1)}</td>
+        <td><Button size="xs" variant="danger" onClick={() => set({ geometricRelationships: draft.geometricRelationships.filter((item) => item.id !== relation.id) })}>Remove</Button></td></tr>)}</tbody></TableWrap>}
+  </Card>;
 }
 
 function BatchEdit({ onApply, prisms }: {

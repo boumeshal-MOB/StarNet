@@ -130,6 +130,7 @@ export function buildRunnerInput(
     prismSetups: config.prismSetups,
     targets: config.targets,
     physicalPoints: config.physicalPoints ?? [],
+    geometricRelationships: config.geometricRelationships ?? [],
     references: referenceSet.points,
     provisional,
     adjustment: config.adjustment,
@@ -176,7 +177,7 @@ export function buildArtifacts(runId: string, out: RunnerOutput, input: RunnerIn
     ...out.preparationWarnings.map((w) => `WARNING: ${w}`),
   ];
   return [
-    { id: `${runId}-input`, runId, kind: 'input-snapshot', label: 'Input snapshot (.DAT equivalent)', content: JSON.stringify({ observations: input.observations.map((o) => o.id), adjustment: input.adjustment, stations: input.stations.map((s) => s.id), references: input.references }, null, 2), createdAt: now },
+    { id: `${runId}-input`, runId, kind: 'input-snapshot', label: 'Input snapshot (.DAT equivalent)', content: JSON.stringify({ observations: input.observations.map((o) => o.id), adjustment: input.adjustment, stations: input.stations.map((s) => s.id), measurementSetups: input.prismSetups, physicalPointMapping: input.physicalPoints, geometricRelationships: input.geometricRelationships, references: input.references }, null, 2), createdAt: now },
     { id: `${runId}-log`, runId, kind: 'engine-log', label: 'Engine log', content: out.logs.join('\n'), createdAt: now },
     { id: `${runId}-pts`, runId, kind: 'pts-equivalent', label: 'Coordinates (.PTS equivalent)', content: pts, createdAt: now },
     { id: `${runId}-lst`, runId, kind: 'lst-equivalent', label: 'Listing (.LST equivalent)', content: lst, createdAt: now },

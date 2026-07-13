@@ -42,12 +42,25 @@ export interface EngineConstraint {
   sigma: number;
 }
 
+export interface EngineGeometricConstraint {
+  id: string;
+  fromId: string;
+  toId: string;
+  kind: 'slope-distance' | 'horizontal-distance' | 'height-difference' | 'vector-3d';
+  distanceM?: number;
+  deltaEM?: number;
+  deltaNM?: number;
+  deltaHM?: number;
+  sigma: number;
+}
+
 export interface AdjustOptions {
   convergenceThresholdM: number;
   maxIterations: number;
   chiSquareSignificance: number;   // e.g. 0.05
   confidenceLevel: number;         // e.g. 0.95 for ellipses
   errorPropagation: boolean;       // scale covariance by variance factor
+  geometricConstraints?: EngineGeometricConstraint[];
 }
 
 export interface ResidualEntry {
@@ -109,6 +122,15 @@ export function adjustNetwork(
   opts: AdjustOptions,
 ): AdjustResult {
   const pt = new Map(points.map((p) => [p.id, { ...p }]));
+  const geometric = opts.geometricConstraints ?? [];
+  const geometricRows: { constraint: EngineGeometricConstraint; component: 'e' | 'n' | 'h' | 'distance' }[] = [];
+  for (const constraint of geometric) {
+    if (constraint.kind === 'vector-3d') {
+      geometricRows.push({ constraint, component: 'e' }, { constraint, component: 'n' }, { constraint, component: 'h' });
+    } else {
+      geometricRows.push({ constraint, component: constraint.kind === 'height-difference' ? 'h' : 'distance' });
+    }
+  }
 
   // ------------------------------------------------- unknown parameter map
   const slots: UnknownSlot[] = [];
@@ -142,15 +164,20 @@ export function adjustNetwork(
 
   const missingPoint = observations.find((o) => !pt.has(o.stationId) || !pt.has(o.targetId));
   if (missingPoint) {
-    return failed(`Observation ${missingPoint.id} references an unknown point`, nUnknowns, observations.length, constraints.length, opts);
+    return failed(`Observation ${missingPoint.id} references an unknown point`, nUnknowns, observations.length, constraints.length + geometricRows.length, opts);
+  }
+  const missingGeometryPoint = geometric.find((constraint) => !pt.has(constraint.fromId) || !pt.has(constraint.toId));
+  if (missingGeometryPoint) {
+    return failed(`Geometric constraint ${missingGeometryPoint.id} references an unknown point`, nUnknowns,
+      observations.length, constraints.length + geometricRows.length, opts);
   }
 
   // -------------------------------------------------------- iteration loop
-  const m = observations.length + constraints.length;
+  const m = observations.length + constraints.length + geometricRows.length;
   if (m < nUnknowns) {
     return failed(
       `Under-determined system: ${m} observations for ${nUnknowns} unknowns`,
-      nUnknowns, observations.length, constraints.length, opts,
+      nUnknowns, observations.length, constraints.length + geometricRows.length, opts,
     );
   }
 
@@ -228,6 +255,32 @@ export function adjustNetwork(
       rows.push(row.map((x) => x * w));
       rhs.push(mis * w);
     }
+    for (const { constraint: c, component } of geometricRows) {
+      const a = pt.get(c.fromId); const b = pt.get(c.toId);
+      const row = new Array<number>(nUnknowns).fill(0);
+      let predicted = 0; let expected = 0;
+      if (a && b) {
+        const dE = b.e - a.e; const dN = b.n - a.n; const dH = b.h - a.h;
+        const iA = coordIndex.get(c.fromId); const iB = coordIndex.get(c.toId);
+        const assign = (off: number, derivative: number) => {
+          if (iB !== undefined) row[iB + off] += derivative;
+          if (iA !== undefined) row[iA + off] -= derivative;
+        };
+        if (component === 'e') { predicted = dE; expected = c.deltaEM ?? 0; assign(0, 1); }
+        else if (component === 'n') { predicted = dN; expected = c.deltaNM ?? 0; assign(1, 1); }
+        else if (component === 'h') { predicted = dH; expected = c.deltaHM ?? 0; assign(2, 1); }
+        else if (c.kind === 'horizontal-distance') {
+          predicted = Math.hypot(dE, dN); expected = c.distanceM ?? 0;
+          if (predicted > 1e-12) { assign(0, dE / predicted); assign(1, dN / predicted); }
+        } else {
+          predicted = Math.hypot(dE, dN, dH); expected = c.distanceM ?? 0;
+          if (predicted > 1e-12) { assign(0, dE / predicted); assign(1, dN / predicted); assign(2, dH / predicted); }
+        }
+      }
+      const w = 1 / c.sigma;
+      rows.push(row.map((value) => value * w));
+      rhs.push((expected - predicted) * w);
+    }
     return { rows, rhs };
   };
 
@@ -243,7 +296,7 @@ export function adjustNetwork(
         ...failed(
           `Rank deficiency: ${nUnknowns - qr.rank} unresolved component(s). ` +
           'The datum or geometry does not control: ' + deficient.join(', '),
-          nUnknowns, observations.length, constraints.length, opts,
+          nUnknowns, observations.length, constraints.length + geometricRows.length, opts,
         ),
         rank: qr.rank,
         rankDeficiency: nUnknowns - qr.rank,
@@ -293,8 +346,11 @@ export function adjustNetwork(
   const nObsByPoint = new Map<string, number>();
   for (let i = 0; i < m; i++) {
     const isObs = i < observations.length;
+    const constraintIndex = i - observations.length;
+    const isCoordinateConstraint = !isObs && constraintIndex < constraints.length;
     const kind: ObsKind | 'constraint' = isObs ? observations[i].kind : 'constraint';
-    const sigma = isObs ? observations[i].sigma : constraints[i - observations.length].sigma;
+    const sigma = isObs ? observations[i].sigma : isCoordinateConstraint
+      ? constraints[constraintIndex].sigma : geometricRows[constraintIndex - constraints.length].constraint.sigma;
     const vw = lastRhs[i]; // weighted post-fit misclosure ~ -weighted residual
     const v = vw * sigma;
     const r = redund[i];
@@ -308,12 +364,19 @@ export function adjustNetwork(
         targetId: o.targetId, kind, residual: v, sigma, stdResidual: stdRes, redundancy: r,
       });
       nObsByPoint.set(o.targetId, (nObsByPoint.get(o.targetId) ?? 0) + 1);
-    } else {
+    } else if (isCoordinateConstraint) {
       const c = constraints[i - observations.length];
       residuals.push({
         obsId: `constraint:${c.pointId}.${c.component}`, rawObservationId: '',
         stationId: '', targetId: c.pointId, kind, residual: v, sigma,
         stdResidual: stdRes, redundancy: r,
+      });
+    } else {
+      const g = geometricRows[constraintIndex - constraints.length];
+      residuals.push({
+        obsId: `geometry:${g.constraint.id}:${g.component}`, rawObservationId: g.constraint.id,
+        stationId: g.constraint.fromId, targetId: g.constraint.toId, kind,
+        residual: v, sigma, stdResidual: stdRes, redundancy: r,
       });
     }
   }
@@ -369,7 +432,7 @@ export function adjustNetwork(
     converged,
     iterations,
     nObservations: observations.length,
-    nConstraints: constraints.length,
+    nConstraints: constraints.length + geometricRows.length,
     nUnknowns,
     rank: lastQr.rank,
     rankDeficiency: nUnknowns - lastQr.rank,

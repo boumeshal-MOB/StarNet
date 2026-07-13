@@ -247,11 +247,33 @@ export interface Station {
 export interface StationPrismSetup {
   stationId: string;
   targetKey: string;           // rawTargetName
+  /** The measurement technology is resolved per station-target pair. */
+  measurementType?: 'prism' | 'reflective-sheet' | 'reflectorless';
+  /** EDM program actually used for this target (not a station-wide rule). */
+  edmMode?: string;
   prismProfileId: string;
   effectiveConstantM: number;  // resolved constant for station+EDM+prism
   constantAppliedByStationM: number;
   targetHeightM: number;
+  /** Optional target-specific stochastic model; falls back to the instrument template. */
+  distanceStdErrMm?: number;
+  distancePpm?: number;
   source: 'template' | 'manual-override';
+}
+
+export interface GeometricRelationship {
+  id: string;
+  pointAId: string;
+  pointBId: string;
+  kind: 'slope-distance' | 'horizontal-distance' | 'height-difference' | 'vector-3d';
+  distanceM?: number;
+  deltaEM?: number;
+  deltaNM?: number;
+  deltaHM?: number;
+  sigmaM: number;
+  enabled: boolean;
+  source: 'survey' | 'design' | 'manual';
+  note?: string;
 }
 
 export type InitialCoordinateStatus =
@@ -315,7 +337,7 @@ export interface PhysicalPoint {
 }
 
 export interface PhysicalPointSuggestion {
-  kind: 'prior-config' | 'business-id' | 'coordinate-proximity' | 'nomenclature' | 'existing-relation';
+  kind: 'prior-config' | 'business-id' | 'coordinate-proximity' | 'local-geometry' | 'nomenclature' | 'existing-relation';
   btmPrismIds: string[];
   confidence: number;
   rationale: string;
@@ -393,6 +415,7 @@ export interface ConfigurationVersion {
   prismSetups: StationPrismSetup[];
   targets: TargetMapping[];
   physicalPoints: PhysicalPoint[];     // versioned point-identity mapping
+  geometricRelationships?: GeometricRelationship[];
   referenceSetId: string;
   provisionalCoordinates: ProvisionalCoordinate[];
   adjustment: AdjustmentTemplate;      // resolved copy, not a reference
