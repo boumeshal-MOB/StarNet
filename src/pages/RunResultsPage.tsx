@@ -369,13 +369,13 @@ function SnapshotTab({ runId }: { runId: string }) {
 
   return (
     <div className="space-y-4">
-      <Card title="Correction traces (prism → atmosphere → datum)">
+      <Card title="Correction traces (prism → atmosphere on slope distance)">
         <TableWrap maxH="max-h-64">
           <thead>
             <tr>
               <th>Observation</th><th>Target</th><th>Stored Sd (m)</th><th>Prism Δ (mm)</th>
               <th>After prism (m)</th><th>T (°C)</th><th>P (hPa)</th><th>PPM</th><th>Scale</th>
-              <th>After atmosphere (m)</th><th>Datum</th><th>Final (m)</th><th>Env source</th><th>Formula</th>
+              <th>After atmosphere (m)</th><th>Horizontal datum (separate)</th><th>Corrected slope (m)</th><th>Env source</th><th>Formula</th>
             </tr>
           </thead>
           <tbody>

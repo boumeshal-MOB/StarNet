@@ -7,10 +7,13 @@ prismDelta            = effectiveConstant(profil station/EDM + prisme) − const
 distanceAfterPrism    = storedDistance + prismDelta          # différentielle, jamais appliquée 2×
 atmosphericScale      = 1 + ppm·1e-6 ;  ppm = 281.8 − 0.29065·P / (1 + T/273.15)   [standard-ppm-v1]
 distanceAfterAtmo     = distanceAfterPrism × atmosphericScale # sauté si déjà corrigée par la station
-finalDistance         = distanceAfterAtmo × datumScale        # étape séparée (mode grid)
+finalSlopeDistance    = distanceAfterAtmo                      # entrée 3D du moteur
+datumScale            = facteur horizontal séparé             # jamais multiplié à la pente complète
 ```
 
-La formule ppm et son signe appartiennent à la **version du profil instrument**
+Les corrections de prisme puis d'atmosphère s'appliquent à la distance inclinée EDM. Le
+facteur datum/grille est conservé séparément pour la réduction horizontale, conformément à
+la sémantique de `.SCALE` dans STAR*NET. La formule ppm et son signe appartiennent à la **version du profil instrument**
 (`atmosphericModelVersion`) et figurent dans chaque snapshot de run. Politique T/P manquants :
 raw-with-warning / assume-corrected / use-defaults / wait-for-late-data (→ provisoire) / fail-run.
 

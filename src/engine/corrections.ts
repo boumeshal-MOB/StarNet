@@ -3,9 +3,10 @@
 //   distanceAfterPrism      = storedDistance + prismDelta
 //   atmosphericScale        = atmosphericModel(T, P, instrumentProfile)
 //   distanceAfterAtmosphere = distanceAfterPrism * atmosphericScale
-//   finalDistance           = distanceAfterAtmosphere * datumScale
-// The PPM sign convention and formula version belong to the instrument
-// profile and are recorded in every run snapshot.
+// The prism and atmospheric corrections are physical EDM corrections and
+// therefore act on the measured slope distance. A datum/grid scale is kept
+// separate: STAR*NET applies it to horizontal distances (or to the horizontal
+// component of a slope distance), not to the complete slope distance.
 // ---------------------------------------------------------------------------
 
 import type {
@@ -30,6 +31,13 @@ export const ATMO_FORMULA_VERSION = 'standard-ppm-v1';
 export function atmosphericPpm(temperatureC: number, pressureHPa: number): number {
   const alpha = 1 / 273.15;
   return 281.8 - (0.29065 * pressureHPa) / (1 + alpha * temperatureC);
+}
+
+export function isValidEnvironment(temperatureC?: number, pressureHPa?: number): boolean {
+  return temperatureC !== undefined && pressureHPa !== undefined
+    && Number.isFinite(temperatureC) && Number.isFinite(pressureHPa)
+    && temperatureC >= -80 && temperatureC <= 80
+    && pressureHPa >= 300 && pressureHPa <= 1200;
 }
 
 export function prismDelta(setup: Pick<StationPrismSetup, 'effectiveConstantM' | 'constantAppliedByStationM'>): number {
@@ -69,13 +77,18 @@ export function lookupEnvironment(
   const t0 = new Date(epoch).getTime();
   let best: EnvironmentalObservation | undefined;
   let bestDt = Infinity;
+  let invalidInWindow = false;
   for (const e of env) {
     if (e.stationId !== station.id) continue;
     const dt = Math.abs(new Date(e.epoch).getTime() - t0) / 60000;
+    if (dt > station.envToleranceMin) continue;
+    if (!isValidEnvironment(e.temperatureC, e.pressureHPa)) {
+      invalidInWindow = true;
+      continue;
+    }
     if (dt < bestDt) { bestDt = dt; best = e; }
   }
-  if (best && bestDt <= station.envToleranceMin
-      && best.temperatureC !== undefined && best.pressureHPa !== undefined) {
+  if (best && best.temperatureC !== undefined && best.pressureHPa !== undefined) {
     return {
       temperatureC: best.temperatureC,
       pressureHPa: best.pressureHPa,
@@ -84,6 +97,7 @@ export function lookupEnvironment(
       warnings,
     };
   }
+  if (invalidInWindow) warnings.push(`Invalid T/P value ignored for ${station.id}`);
   // missing data -> policy
   const policy: MissingEnvPolicy = station.missingEnvPolicy;
   switch (policy) {
@@ -156,8 +170,11 @@ export function correctDistance(input: CorrectionInput): CorrectionTrace {
   }
   const afterAtmo = afterPrism * scale;
 
-  // 3. datum / grid scale factor (separate, explicit step)
-  const final = afterAtmo * datumScale;
+  // 3. A datum/grid scale is intentionally NOT multiplied into the slope
+  // distance here. It belongs to the horizontal reduction performed by the
+  // adjustment/export layer. Keeping it in the trace prevents it being
+  // confused with the atmospheric EDM scale used above.
+  const final = afterAtmo;
 
   return {
     observationId: observation.id,

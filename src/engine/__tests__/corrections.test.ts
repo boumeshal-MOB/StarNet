@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { atmosphericPpm, correctDistance, prismDelta } from '../corrections';
+import { atmosphericPpm, correctDistance, isValidEnvironment, lookupEnvironment, prismDelta } from '../corrections';
 import type { InstrumentProfile, RawObservation, Station } from '../../types/domain';
 
 const station = (over: Partial<Station> = {}): Station => ({
@@ -96,12 +96,23 @@ describe('atmospheric correction', () => {
     expect(corrected.atmosphericScale).toBe(1); // already corrected by the station
   });
 
-  it('applies the datum scale as a separate final step', () => {
+  it('does not apply the horizontal datum scale to the slope distance', () => {
     const t = correctDistance({
       observation: obs(100), station: station(),
       setup: { effectiveConstantM: 0, constantAppliedByStationM: 0 },
       instrument, env: { source: 'none', warnings: [] }, datumScale: 0.9996, targetId: 'T1',
     });
-    expect(t.finalDistanceM).toBeCloseTo(99.96, 6);
+    expect(t.finalDistanceM).toBeCloseTo(100, 6);
+    expect(t.datumScale).toBe(0.9996);
+  });
+
+  it('rejects invalid sensor sentinels and uses the configured fallback', () => {
+    expect(isValidEnvironment(-9999, 1013)).toBe(false);
+    const s = station({ atmosphericMode: 'automatic', missingEnvPolicy: 'raw-with-warning' });
+    const result = lookupEnvironment(s, '2026-07-08T10:25:00Z', [{
+      id: 'env-invalid', stationId: 'ATS34', epoch: '2026-07-08T10:24:00Z', temperatureC: -9999, pressureHPa: 1013,
+    }]);
+    expect(result.source).toBe('none');
+    expect(result.warnings.join(' ')).toContain('Invalid T/P');
   });
 });

@@ -278,8 +278,8 @@ function Step3({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraf
   return (
     <div className="space-y-4">
       {draft.stations.map((s) => (
-        <Card key={s.id} title={`Station ${s.id} - Instrument and distance corrections`}>
-          <div className="grid grid-cols-3 gap-4">
+        <Card key={s.id} title={`Station ${s.id} · Instrument and distance corrections`}>
+          <div className="grid gap-3 md:grid-cols-3">
             <Field label="Instrument template">
               <Select value={s.instrumentProfileId}
                 onChange={(v) => patchStation(s.id, { instrumentProfileId: v })}
@@ -294,66 +294,41 @@ function Step3({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraf
               <NumberInput value={s.instrumentHeightM} step={0.001}
                 onChange={(v) => patchStation(s.id, { instrumentHeightM: v })} />
             </Field>
-            <Field label="Validity from">
-              <TextInput type="datetime-local" value={s.validFrom.slice(0, 16)}
-                onChange={(e) => patchStation(s.id, { validFrom: new Date(e.target.value + 'Z').toISOString() })} />
-            </Field>
-            <Field label="Distance state" hint="What the station already applied to stored distances.">
-              <Select value={s.distanceState}
-                onChange={(v) => patchStation(s.id, { distanceState: v as typeof s.distanceState })}
-                options={[
-                  { value: 'raw', label: 'Raw - no correction applied' },
-                  { value: 'prism-corrected', label: 'Prism corrected by station' },
-                  { value: 'atmo-corrected', label: 'Atmospherically corrected by station' },
-                  { value: 'fully-corrected', label: 'Fully corrected by station' },
-                  { value: 'unknown', label: 'Unknown / user assumption' },
-                ]} />
-            </Field>
-            <Field label="Constant applied by station" unit="mm" hint="Field constant already added by the RTS firmware.">
-              <NumberInput value={s.constantAppliedByStationM * 1000} step={0.1}
-                onChange={(v) => patchStation(s.id, { constantAppliedByStationM: v / 1000 })} />
-            </Field>
           </div>
-          <div className="mt-4 rounded-md bg-slate-50 p-3">
-            <div className="mb-2 text-xs font-semibold text-slate-600">Atmospheric correction</div>
-            <div className="grid grid-cols-3 gap-4">
-              <Field label="Mode">
+          <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+            <div className="grid items-end gap-3 md:grid-cols-3">
+              <Field label="Atmospheric correction" hint="Choose what is stored in BTM.">
                 <Select value={s.atmosphericMode}
                   onChange={(v) => patchStation(s.id, { atmosphericMode: v as typeof s.atmosphericMode })}
                   options={[
-                    { value: 'automatic', label: 'Automatic for each station and cycle' },
-                    { value: 'station-corrected', label: 'Already corrected by station' },
-                    { value: 'none', label: 'No correction' },
-                    { value: 'defaults', label: 'Use configured default T / P' },
+                    { value: 'station-corrected', label: 'Already applied by the station' },
+                    { value: 'automatic', label: 'Use cycle temperature and pressure' },
+                    { value: 'defaults', label: 'Use fixed temperature and pressure' },
+                    { value: 'none', label: 'Do not apply atmospheric correction' },
                   ]} />
               </Field>
               {s.atmosphericMode === 'automatic' && (
                 <>
-                  <Field label="Temperature variable">
+                  <Field label="Temperature data">
                     <Select value={s.temperatureVariable ?? ''} onChange={(v) => patchStation(s.id, { temperatureVariable: v })}
                       options={[{ value: `${s.id}.Temperature`, label: `${s.id}.Temperature` }]} />
                   </Field>
-                  <Field label="Pressure variable">
+                  <Field label="Pressure data">
                     <Select value={s.pressureVariable ?? ''} onChange={(v) => patchStation(s.id, { pressureVariable: v })}
                       options={[{ value: `${s.id}.Pressure`, label: `${s.id}.Pressure` }]} />
                   </Field>
-                  <Field label="Temporal tolerance" unit="min" hint="Max age of T/P vs the station epoch.">
-                    <NumberInput value={s.envToleranceMin} onChange={(v) => patchStation(s.id, { envToleranceMin: v })} />
-                  </Field>
-                  <Field label="If T/P missing">
+                  <Field label="If data is missing or invalid">
                     <Select value={s.missingEnvPolicy}
                       onChange={(v) => patchStation(s.id, { missingEnvPolicy: v as typeof s.missingEnvPolicy })}
                       options={[
-                        { value: 'raw-with-warning', label: 'Use raw distance with warning' },
-                        { value: 'assume-corrected', label: 'Assume already corrected' },
-                        { value: 'use-defaults', label: 'Use configured defaults' },
-                        { value: 'wait-for-late-data', label: 'Wait for late environmental data (provisional)' },
-                        { value: 'fail-run', label: 'Fail the run' },
+                        { value: 'raw-with-warning', label: 'Continue without atmospheric correction' },
+                        { value: 'use-defaults', label: 'Use the fixed values below' },
                       ]} />
                   </Field>
                 </>
               )}
-              {(s.atmosphericMode === 'defaults' || s.atmosphericMode === 'automatic') && (
+              {(s.atmosphericMode === 'defaults'
+                || (s.atmosphericMode === 'automatic' && s.missingEnvPolicy === 'use-defaults')) && (
                 <>
                   <Field label="Default temperature" unit="degC">
                     <NumberInput value={s.defaultTemperatureC} onChange={(v) => patchStation(s.id, { defaultTemperatureC: v })} />
@@ -364,12 +339,50 @@ function Step3({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraf
                 </>
               )}
             </div>
-            <p className="mt-2 text-2xs text-slate-500">
-              Correction chain (traced per observation): distanceAfterPrism = storedDistance + prismDelta →
-              distanceAfterAtmosphere = distanceAfterPrism × atmosphericScale(T, P) → × grid/datum factor.
-              PPM formula and sign belong to the instrument profile version and are recorded in every run snapshot.
-            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-2xs text-slate-500">
+              <Badge tone={s.atmosphericMode === 'station-corrected' ? 'Success' : 'Ready'}>
+                {s.atmosphericMode === 'station-corrected' ? 'No atmospheric recalculation' : 'Applied to slope distance'}
+              </Badge>
+              <span>Prism correction → atmospheric correction → 3D reduction</span>
+            </div>
           </div>
+
+          <details className="group mt-3 rounded-lg border border-slate-200 bg-white">
+            <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-xs font-medium text-slate-700">
+              <span>Advanced correction details</span>
+              <span className="text-slate-400 transition-transform group-open:rotate-180">⌄</span>
+            </summary>
+            <div className="border-t border-slate-100 px-3 py-3">
+              <div className="grid gap-3 md:grid-cols-3">
+                <Field label="Stored distance state" hint="What was already applied before storage in BTM.">
+                  <Select value={s.distanceState}
+                    onChange={(v) => patchStation(s.id, { distanceState: v as typeof s.distanceState })}
+                    options={[
+                      { value: 'raw', label: 'Raw slope distance' },
+                      { value: 'prism-corrected', label: 'Prism constant already applied' },
+                      { value: 'atmo-corrected', label: 'Atmosphere already applied' },
+                      { value: 'fully-corrected', label: 'Prism and atmosphere already applied' },
+                      { value: 'unknown', label: 'Unknown — treat as raw' },
+                    ]} />
+                </Field>
+                <Field label="Prism constant already applied" unit="mm" hint="BTM only applies the difference to the required constant.">
+                  <NumberInput value={s.constantAppliedByStationM * 1000} step={0.1}
+                    onChange={(v) => patchStation(s.id, { constantAppliedByStationM: v / 1000 })} />
+                </Field>
+                {s.atmosphericMode === 'automatic' && (
+                  <Field label="Maximum T/P age" unit="min" hint="Relative to the observation cycle timestamp.">
+                    <NumberInput value={s.envToleranceMin} onChange={(v) => patchStation(s.id, { envToleranceMin: v })} />
+                  </Field>
+                )}
+              </div>
+              <div className="mt-3 rounded-md bg-sky-50 px-3 py-2 text-2xs leading-5 text-sky-900">
+                <strong>Formula used on the slope distance</strong><br />
+                SD₁ = SD stored + (required prism constant − constant already applied)<br />
+                SD₂ = SD₁ × (1 + ppm(T, P) × 10⁻⁶)<br />
+                A grid or datum scale remains separate and applies only to the horizontal reduction. Every value and fallback is saved in the run trace.
+              </div>
+            </div>
+          </details>
         </Card>
       ))}
     </div>

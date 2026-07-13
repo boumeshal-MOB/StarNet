@@ -22,7 +22,7 @@ const LEGACY: [string, string][] = [
   ['Target/Lookup Table', 'Targets & Prisms tab: three names, constant, height, inclusion, publication - REPLACED'],
   ['Header Block', 'Versioned Reference Sets with per-component coordinates and sigmas - REPLACED'],
   ['New point auto-added unchecked', 'Target "To review", excluded by default - REPLACED'],
-  ['Temperature/pressure to .SCALE', 'Traced atmospheric correction per station and cycle - REPLACED'],
+  ['Temperature/pressure exported as .SCALE', 'Prism then atmosphere applied to the EDM slope distance; horizontal datum scale kept separate - CORRECTED'],
   ['Prism constant added to Sd', 'Station-Prism Setup and audited differential correction - REPLACED'],
   ['.DAT generation', 'Input Builder (local engine in the mockup, server-side in target BTM) - REPLACED'],
   ['Local Star*Net call', 'Mockup: local weighted LSQ engine; production: Star*Net Ultimate worker - REPLACED'],
