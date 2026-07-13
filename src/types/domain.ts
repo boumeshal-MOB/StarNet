@@ -79,14 +79,7 @@ export interface CountryTemplate {
   version: number;
   status: 'active' | 'deprecated' | 'archived';
   linearUnit: 'm';
-  angularUnit: 'deg' | 'gon';
-  coordinateOrder: 'EN' | 'NE';
-  projectionMode: 'local' | 'grid';
-  refractionCoefficient: number;
-  earthRadiusM: number;
-  convergenceThresholdM: number;
-  chiSquareSignificance: number;   // e.g. 0.05
-  confidenceLevel: number;         // e.g. 0.95
+  defaultAdjustmentTemplateId: string;
   defaultInstrumentTemplateId: string;
   defaultPrismSetupTemplateId: string;
   prismSetupTemplateIds: string[];
@@ -146,8 +139,12 @@ export interface AdjustmentTemplate {
   dimension: '2D' | '3D';
   linearUnit: 'm';
   angularUnit: 'deg' | 'gon';
+  angleOutputFormat: 'DMS' | 'DecimalDegrees' | 'Gons';
   projectionMode: 'local' | 'grid';
   coordinateOrder: 'EN' | 'NE';
+  /** STAR*NET convergence limit: unitless SSR-change criterion. */
+  starNetConvergenceLimit: number;
+  /** Local mock solver coordinate-increment tolerance; never exported to STAR*NET. */
   convergenceThresholdM: number;
   maxIterations: number;
   chiSquareSignificance: number;
@@ -158,6 +155,11 @@ export interface AdjustmentTemplate {
   earthRadiusM: number;
   datumScaleFactor: number;
   useCenteringErrors: boolean;
+  /** STAR*NET Ultimate Auto Adjust settings; exported to the server project. */
+  starNetAutoAdjustStdResLimit: number;
+  starNetAutoAdjustOutliersPerIteration: number;
+  starNetAutoAdjustMaxIterations: number;
+  /** Local mock runner guardrails; never exported to STAR*NET. */
   stdResThreshold: number;          // standardized residual rejection limit
   removalsPerIteration: number;
   maxAutoCorrectionAttempts: number;

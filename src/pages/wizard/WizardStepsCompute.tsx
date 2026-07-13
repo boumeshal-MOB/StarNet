@@ -9,6 +9,7 @@ import { correctDistance, lookupEnvironment } from '../../engine/corrections';
 import { repository } from '../../data/repository';
 import { fmtArcSec, fmtM, fmtMm } from '../../lib/format';
 import type { AdjustmentTemplate, CorrectionTrace } from '../../types/domain';
+import { ADJUSTMENT_TEMPLATES } from '../../data/templates';
 import { NetworkView } from '../../components/NetworkView';
 
 // ===================================================== Initialisation =======
@@ -269,6 +270,7 @@ export function StepInitial({ draft, set }: { draft: WizardDraft; set: (p: Parti
 // ============================================================ Step 7 =======
 export function StepAdjustment({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraft>) => void }) {
   const a = draft.adjustment;
+  const sourceTemplate = ADJUSTMENT_TEMPLATES.find((item) => item.id === a.id) ?? a;
   const patch = (p: Partial<AdjustmentTemplate>) => set({ adjustment: { ...a, ...p } });
   const [expertOpen, setExpertOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -280,27 +282,32 @@ export function StepAdjustment({ draft, set }: { draft: WizardDraft; set: (p: Pa
       <Card title="Step 7 - Adjustment configuration">
         <Callout tone="info">The template provides production-ready defaults. Review the quality thresholds below, then open Advanced options only when the site requires a specific weighting model.</Callout>
         <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {show('adjustment template') && <Field label="Adjustment template" hint="Versioned STAR*NET defaults selected by the country template.">
+            <TextInput value={a.name} disabled /></Field>}
           {show('dimension') && <Field label="Dimension"><Select value={a.dimension} onChange={(v) => patch({ dimension: v as '2D' | '3D' })}
             options={[{ value: '3D', label: '3D' }, { value: '2D', label: '2D (horizontal only)' }]} /></Field>}
           {show('linear units') && <Field label="Linear units"><TextInput value="metres" disabled /></Field>}
-          {show('angular units') && <Field label="Angular units"><Select value={a.angularUnit} onChange={(v) => patch({ angularUnit: v as 'deg' | 'gon' })}
-            options={[{ value: 'deg', label: 'degrees' }, { value: 'gon', label: 'gon' }]} /></Field>}
+          {show('angle output') && <Field label="Angle output"><Select value={a.angleOutputFormat} onChange={(v) => patch({
+            angleOutputFormat: v as AdjustmentTemplate['angleOutputFormat'],
+            angularUnit: v === 'Gons' ? 'gon' : 'deg',
+          })}
+            options={[{ value: 'DMS', label: 'DMS' }, { value: 'DecimalDegrees', label: 'Decimal degrees' }, { value: 'Gons', label: 'Gons' }]} /></Field>}
           {show('projection local grid') && <Field label="Local / grid"><Select value={a.projectionMode} onChange={(v) => patch({ projectionMode: v as 'local' | 'grid' })}
             options={[{ value: 'local', label: 'Local system' }, { value: 'grid', label: 'Grid (apply datum factor)' }]} /></Field>}
           {show('coordinate order') && <Field label="Coordinate order"><Select value={a.coordinateOrder} onChange={(v) => patch({ coordinateOrder: v as 'EN' | 'NE' })}
             options={[{ value: 'EN', label: 'Easting / Northing' }, { value: 'NE', label: 'Northing / Easting' }]} /></Field>}
-          {show('convergence threshold') && <Field label="Convergence threshold" unit="m" inherited="0.00005">
-            <NumberInput value={a.convergenceThresholdM} step={0.00001} onChange={(v) => patch({ convergenceThresholdM: v })} /></Field>}
-          {show('max iterations') && <Field label="Max iterations" inherited="20">
+          {show('convergence limit') && <Field label="STAR*NET convergence limit" hint="Unitless change in the sum of squared standardized residuals" inherited={String(sourceTemplate.starNetConvergenceLimit)}>
+            <NumberInput value={a.starNetConvergenceLimit} step={0.01} onChange={(v) => patch({ starNetConvergenceLimit: v })} /></Field>}
+          {show('max iterations') && <Field label="Max solution iterations" inherited={String(sourceTemplate.maxIterations)}>
             <NumberInput value={a.maxIterations} onChange={(v) => patch({ maxIterations: v })} /></Field>}
-          {show('chi-square significance') && <Field label="Chi² significance" hint="Two-sided test level" inherited="0.05">
+          {show('chi-square significance') && <Field label="Chi² significance" hint="Two-sided test level" inherited={String(sourceTemplate.chiSquareSignificance)}>
             <NumberInput value={a.chiSquareSignificance} step={0.01} onChange={(v) => patch({ chiSquareSignificance: v })} /></Field>}
-          {show('confidence level') && <Field label="Confidence level" hint="For error ellipses" inherited="0.95">
+          {show('confidence level') && <Field label="Confidence level" hint="For error ellipses" inherited={String(sourceTemplate.confidenceLevel)}>
             <NumberInput value={a.confidenceLevel} step={0.01} onChange={(v) => patch({ confidenceLevel: v })} /></Field>}
           {show('error propagation') && <Field label="Error propagation">
             <Toggle checked={a.errorPropagation} onChange={(v) => patch({ errorPropagation: v })}
-              label={a.errorPropagation ? 'Covariance scaled by variance factor' : 'A-priori covariance'} /></Field>}
-          {show('auto-correction') && <Field label="Auto-correction">
+              label={a.errorPropagation ? 'Enabled — standard deviations and confidence ellipses' : 'Disabled'} /></Field>}
+          {show('auto adjust') && <Field label="STAR*NET Auto Adjust">
             <Toggle checked={a.autoCorrectionEnabled} onChange={(v) => patch({ autoCorrectionEnabled: v })}
               label={a.autoCorrectionEnabled ? 'Enabled' : 'Disabled'} /></Field>}
         </div>
@@ -315,32 +322,21 @@ export function StepAdjustment({ draft, set }: { draft: WizardDraft; set: (p: Pa
         }>
         {!expertOpen ? <p className="text-xs text-slate-500">Specialised weighting, centering, datum and auto-correction parameters are collapsed. Their current values come from the selected template.</p> : (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {show('distance weighting') && <Field label="Distance weighting" hint="How constant and ppm parts combine" inherited="quadratic">
-              <Select value={a.distanceWeighting} onChange={(v) => patch({ distanceWeighting: v as 'additive' | 'quadratic' })}
-                options={[{ value: 'quadratic', label: 'Quadratic sqrt(c² + ppm²)' }, { value: 'additive', label: 'Additive c + ppm' }]} /></Field>}
             {show('centering errors') && <Field label="Centering errors">
               <Toggle checked={a.useCenteringErrors} onChange={(v) => patch({ useCenteringErrors: v })}
                 label={a.useCenteringErrors ? 'Included in weights' : 'Ignored'} /></Field>}
-            {show('refraction coefficient') && <Field label="Refraction coefficient" inherited="0.13">
+            {show('refraction coefficient') && <Field label="Refraction coefficient" inherited={String(sourceTemplate.refractionCoefficient)}>
               <NumberInput value={a.refractionCoefficient} step={0.01} onChange={(v) => patch({ refractionCoefficient: v })} /></Field>}
-            {show('earth radius') && <Field label="Earth radius" unit="m" inherited="6371000">
+            {show('earth radius') && <Field label="Earth radius" unit="m" inherited={String(sourceTemplate.earthRadiusM)}>
               <NumberInput value={a.earthRadiusM} onChange={(v) => patch({ earthRadiusM: v })} /></Field>}
             {show('datum grid factor') && <Field label="Datum / grid factor" inherited="1.0">
               <NumberInput value={a.datumScaleFactor} step={0.000001} onChange={(v) => patch({ datumScaleFactor: v })} /></Field>}
-            {show('standardized residual threshold') && <Field label="Std residual threshold" hint="Outlier rejection limit" inherited="3.5">
-              <NumberInput value={a.stdResThreshold} step={0.1} onChange={(v) => patch({ stdResThreshold: v })} /></Field>}
-            {show('removals per iteration') && <Field label="Removals per iteration" inherited="1">
-              <NumberInput value={a.removalsPerIteration} onChange={(v) => patch({ removalsPerIteration: v })} /></Field>}
-            {show('max auto-correction attempts') && <Field label="Max auto-correction attempts" inherited="5">
-              <NumberInput value={a.maxAutoCorrectionAttempts} onChange={(v) => patch({ maxAutoCorrectionAttempts: v })} /></Field>}
-            {show('max removed observations') && <Field label="Max removed observations" inherited="10">
-              <NumberInput value={a.maxRemovedObservations} onChange={(v) => patch({ maxRemovedObservations: v })} /></Field>}
-            {show('max removed ratio') && <Field label="Max removed ratio" hint="0..1" inherited="0.1">
-              <NumberInput value={a.maxRemovedRatio} step={0.01} onChange={(v) => patch({ maxRemovedRatio: v })} /></Field>}
-            {show('min degrees of freedom') && <Field label="Min degrees of freedom" inherited="5">
-              <NumberInput value={a.minDegreesOfFreedom} onChange={(v) => patch({ minDegreesOfFreedom: v })} /></Field>}
-            {show('max ellipse') && <Field label="Max ellipse semi-major" unit="mm" hint="Publication criterion" inherited="5">
-              <NumberInput value={a.maxEllipseSemiMajorMm} step={0.5} onChange={(v) => patch({ maxEllipseSemiMajorMm: v })} /></Field>}
+            {show('standardized residual threshold') && <Field label="Auto Adjust residual limit" hint="STAR*NET standardized residual threshold" inherited={String(sourceTemplate.starNetAutoAdjustStdResLimit)}>
+              <NumberInput value={a.starNetAutoAdjustStdResLimit} step={0.1} onChange={(v) => patch({ starNetAutoAdjustStdResLimit: v })} /></Field>}
+            {show('removals per iteration') && <Field label="Outliers per Auto Adjust iteration" inherited={String(sourceTemplate.starNetAutoAdjustOutliersPerIteration)}>
+              <NumberInput value={a.starNetAutoAdjustOutliersPerIteration} onChange={(v) => patch({ starNetAutoAdjustOutliersPerIteration: v })} /></Field>}
+            {show('max auto-correction attempts') && <Field label="Max Auto Adjust iterations" inherited={String(sourceTemplate.starNetAutoAdjustMaxIterations)}>
+              <NumberInput value={a.starNetAutoAdjustMaxIterations} onChange={(v) => patch({ starNetAutoAdjustMaxIterations: v })} /></Field>}
             {show('fixed constraint sigma') && <Field label="Fixed constraint sigma" unit="m" hint="Pseudo-observation sigma for Fixed components" inherited="0.0001">
               <NumberInput value={a.fixedConstraintSigmaM} step={0.0001} onChange={(v) => patch({ fixedConstraintSigmaM: v })} /></Field>}
           </div>

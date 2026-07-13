@@ -19,14 +19,22 @@ raw-with-warning / assume-corrected / use-defaults / wait-for-late-data (→ pro
 
 ## Coordonnées initiales (initial.ts)
 
-Orientation de chaque station = moyenne circulaire pondérée (poids = distance) de
-`azimut(station, référence) − direction observée`. Puis rayonnement polaire :
+Dans la fenêtre d'initialisation, une observation représentative est construite pour chaque
+couple `station × cible` par médiane de Hz, Vz et de la distance inclinée corrigée. Orientation
+de chaque station = moyenne circulaire pondérée (poids = distance) de
+`azimut(station, référence) − direction représentative`. Puis rayonnement polaire :
 `hd = sd·sin(Vz)` ; `dH = sd·cos(Vz)` ; `az = hz + orientation` ;
 `E = Es + hd·sin(az)` ; `N = Ns + hd·cos(az)` ; `H = Hs + ih + dH − th`.
-Cibles multi-stations : moyenne + dispersion (spread horizontal/vertical affichés).
+Cibles multi-stations : médiane des estimations + dispersion (spread horizontal/vertical affichés).
 Échecs motivés (station non orientable, référence manquante).
 
 ## Ajustement (adjust.ts) — Gauss-Newton 3D pondéré
+
+Le moteur local s'arrête lorsque le déplacement maximal des coordonnées est inférieur à
+`convergenceThresholdM` et que la variation d'orientation est suffisamment petite. Ce seuil en
+mètres appartient uniquement au moteur de maquette. Il ne doit pas être exporté comme
+`converge_limit` STAR*NET : STAR*NET utilise un seuil sans unité sur la variation de la somme des
+carrés des résidus standardisés. Seul ce paramètre STAR*NET est généré pour la production.
 
 - **Inconnues** : E/N/H de chaque point libre (stations ajustables, références, prismes
   observés) + **une orientation par station** présente dans l'époque (jamais une constante

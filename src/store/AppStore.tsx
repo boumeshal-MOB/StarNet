@@ -16,7 +16,9 @@ import type {
   ProcessingStatus, ReferenceSet,
 } from '../types/domain';
 import { repository, getDeliveryState, setDeliveryState, type DeliveryState } from '../data/repository';
-import { COUNTRY_TEMPLATES, DEFAULT_ADJUSTMENT, DEFAULT_OUTPUT, DEFAULT_RUN } from '../data/templates';
+import {
+  ADJUSTMENT_TEMPLATES, COUNTRY_TEMPLATES, DEFAULT_ADJUSTMENT, DEFAULT_OUTPUT, DEFAULT_RUN,
+} from '../data/templates';
 import { loadPersisted, savePersisted, clearPersisted } from '../data/db';
 import { runAdjustmentAsync } from '../engine/engineClient';
 import { buildResolvedMapping, validatePointMapping } from '../engine/pointIdentity';
@@ -43,7 +45,7 @@ export interface AppState {
   audit: AuditEvent[];
   delivery: DeliveryState;
   countryTemplates: typeof COUNTRY_TEMPLATES;
-  adjustmentTemplates: (typeof DEFAULT_ADJUSTMENT)[];
+  adjustmentTemplates: typeof ADJUSTMENT_TEMPLATES;
   runTemplates: (typeof DEFAULT_RUN)[];
   outputTemplates: (typeof DEFAULT_OUTPUT)[];
   busy: string | null;
@@ -62,7 +64,7 @@ const initialState: AppState = {
   audit: [],
   delivery: { ats36LateDelivered: false, ats35EnvDelivered: false },
   countryTemplates: COUNTRY_TEMPLATES,
-  adjustmentTemplates: [DEFAULT_ADJUSTMENT],
+  adjustmentTemplates: ADJUSTMENT_TEMPLATES,
   runTemplates: [DEFAULT_RUN],
   outputTemplates: [DEFAULT_OUTPUT],
   busy: null,

@@ -220,6 +220,16 @@ alignés, ambiguïté de transformation ou résidus supérieurs aux tolérances.
 Le template d'ajustement propose les poids et contrôles standards. Les options avancées donnent
 accès aux paramètres complets, au χ², à l'autocorrection, aux erreurs de centrage et aux seuils.
 
+La vue compacte affiche le template et sa provenance, dimension, système, unité angulaire,
+itérations, χ², confiance, propagation et résumé d'autocorrection. La convergence porte le
+libellé STAR*NET et reste sans unité. Les options avancées contiennent réfraction/rayon,
+pondérations, centrage et paramètres Auto Adjust STAR*NET.
+
+Le preset UK reprend le projet STAR*NET HS2/NTE fourni. Le preset France est également un
+template STAR*NET, adapté aux conventions France. Aucun paramètre d'un autre moteur n'est exposé
+ou stocké. Les règles complètes figurent dans
+[`10-starnet-country-templates.md`](10-starnet-country-templates.md).
+
 Les poids distance utilisés proviennent de chaque configuration de mesure résolue, pas d'un
 unique mode EDM de station.
 

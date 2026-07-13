@@ -292,8 +292,10 @@ export function StepReview({ draft, set }: { draft: WizardDraft; set: (p: Partia
             ['Run policy', `${draft.runPolicy.triggerMode}, sync ${draft.runPolicy.syncToleranceMin} min, reuse ≤ ${draft.runPolicy.maxReusedAgeMin} min`],
             ['Catch-up', draft.runPolicy.catchUpEnabled ? `enabled (${draft.runPolicy.catchUpWindowH} h window, max ${draft.runPolicy.maxRecalcPerSlot}/slot)` : 'disabled'],
             ['Output policy', `${draft.outputPolicy.outputIntervalMin} min grid, ${draft.outputPolicy.variables.length} variables`],
-            ['Quality', `Chi² α=${draft.adjustment.chiSquareSignificance}, confidence ${draft.adjustment.confidenceLevel}, stdres ≤ ${draft.adjustment.stdResThreshold}`],
-            ['Auto-correction', draft.adjustment.autoCorrectionEnabled ? `max ${draft.adjustment.maxAutoCorrectionAttempts} attempts` : 'disabled'],
+            ['Quality', `Chi² α=${draft.adjustment.chiSquareSignificance}, confidence ${draft.adjustment.confidenceLevel}, stdres ≤ ${draft.adjustment.starNetAutoAdjustStdResLimit}`],
+            ['STAR*NET Auto Adjust', draft.adjustment.autoCorrectionEnabled
+              ? `threshold ${draft.adjustment.starNetAutoAdjustStdResLimit}, remove ${draft.adjustment.starNetAutoAdjustOutliersPerIteration}, max ${draft.adjustment.starNetAutoAdjustMaxIterations}`
+              : 'disabled'],
           ]} />
         </div>
         <div className="mt-4 space-y-1">

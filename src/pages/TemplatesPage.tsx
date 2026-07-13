@@ -14,6 +14,7 @@ export function TemplatesPage() {
     return instrument ? `${instrument.manufacturer} ${instrument.model}` : id;
   };
   const prismName = (id: string) => repository.prismProfiles().find((item) => item.id === id)?.name ?? id;
+  const adjustmentName = (id: string) => state.adjustmentTemplates.find((item) => item.id === id)?.name ?? id;
 
   const usage = (templateId: string) =>
     state.configVersions.filter((c) =>
@@ -51,7 +52,7 @@ export function TemplatesPage() {
       {tab === 'Country' && (
         <TableWrap>
           <thead><tr><th>Name</th><th>Version</th><th>Status</th><th>Instrument / reflector</th><th>Stored distance default</th>
-            <th>Units</th><th>Projection</th><th>Chi² α</th><th>Confidence</th><th>Used by</th><th>Actions</th></tr></thead>
+            <th>STAR*NET adjustment</th><th>Used by</th><th>Actions</th></tr></thead>
           <tbody>
             {state.countryTemplates.map((c) => (
               <tr key={c.id}>
@@ -62,10 +63,7 @@ export function TemplatesPage() {
                 <td className="text-2xs">{c.prismCorrectionPolicy === 'already-applied'
                   ? 'Prism + atmosphere already corrected'
                   : `Per-target prism / ${c.defaultAtmosphericMode} atmosphere`}</td>
-                <td>{c.linearUnit} / {c.angularUnit}</td>
-                <td>{c.projectionMode}</td>
-                <td>{c.chiSquareSignificance}</td>
-                <td>{c.confidenceLevel}</td>
+                <td className="text-2xs">{adjustmentName(c.defaultAdjustmentTemplateId)}</td>
                 <td>{usageCell(c.id)}</td>
                 <td><TemplateActions name={c.name} kind="country" /></td>
               </tr>
@@ -129,13 +127,13 @@ export function TemplatesPage() {
         <Card key={t.id} title={`${t.name} (v${t.version})`} actions={<TemplateActions name={t.name} kind="adjustment" />}>
           <KV items={[
             ['Dimension / projection', `${t.dimension} / ${t.projectionMode}`],
-            ['Convergence', `${t.convergenceThresholdM} m, max ${t.maxIterations} iterations`],
+            ['Angle output / coordinate order', `${t.angleOutputFormat} / ${t.coordinateOrder}`],
+            ['STAR*NET convergence', `${t.starNetConvergenceLimit} (unitless), max ${t.maxIterations} solution iterations`],
             ['Chi² / confidence', `α=${t.chiSquareSignificance} / ${t.confidenceLevel}`],
-            ['Distance weighting', t.distanceWeighting],
-            ['Auto-correction', t.autoCorrectionEnabled
-              ? `enabled: stdres>${t.stdResThreshold}, ${t.removalsPerIteration}/iter, max ${t.maxAutoCorrectionAttempts} attempts, ≤${t.maxRemovedObservations} obs (≤${t.maxRemovedRatio * 100}%)`
+            ['Refraction / earth radius', `${t.refractionCoefficient} / ${t.earthRadiusM} m`],
+            ['STAR*NET Auto Adjust', t.autoCorrectionEnabled
+              ? `enabled: threshold ${t.starNetAutoAdjustStdResLimit}, remove ${t.starNetAutoAdjustOutliersPerIteration}/iteration, max ${t.starNetAutoAdjustMaxIterations}`
               : 'disabled'],
-            ['Publication', `min DOF ${t.minDegreesOfFreedom}, max ellipse ${t.maxEllipseSemiMajorMm} mm`],
             ['Used by', usage(t.id).length > 0 ? `${usage(t.id).length} configuration version(s)` : 'unused'],
           ]} />
         </Card>
