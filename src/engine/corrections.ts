@@ -66,6 +66,9 @@ export function lookupEnvironment(
     return { source: 'none', warnings };
   }
   if (station.atmosphericMode === 'defaults') {
+    if (!isValidEnvironment(station.defaultTemperatureC, station.defaultPressureHPa)) {
+      return { source: 'none', warnings: [`Invalid fixed T/P configured for ${station.id}; no atmospheric correction applied`] };
+    }
     return {
       temperatureC: station.defaultTemperatureC,
       pressureHPa: station.defaultPressureHPa,
@@ -102,6 +105,10 @@ export function lookupEnvironment(
   const policy: MissingEnvPolicy = station.missingEnvPolicy;
   switch (policy) {
     case 'use-defaults':
+      if (!isValidEnvironment(station.defaultTemperatureC, station.defaultPressureHPa)) {
+        warnings.push(`Invalid fixed T/P configured for ${station.id}; no atmospheric correction applied`);
+        return { source: 'none', warnings };
+      }
       warnings.push(`No T/P within ${station.envToleranceMin} min for ${station.id}; configured defaults used`);
       return {
         temperatureC: station.defaultTemperatureC,
@@ -135,7 +142,7 @@ export interface CorrectionInput {
 
 /** Apply the full, traced correction chain to one observation. */
 export function correctDistance(input: CorrectionInput): CorrectionTrace {
-  const { observation, station, setup, env, datumScale, targetId } = input;
+  const { observation, station, setup, instrument, env, datumScale, targetId } = input;
   const warnings = [...env.warnings];
   const state: DistanceState = station.distanceState;
 
@@ -161,9 +168,13 @@ export function correctDistance(input: CorrectionInput): CorrectionTrace {
   // 2. atmospheric correction
   let ppm = 0;
   let scale = 1;
-  const atmoAlreadyDone = state === 'atmo-corrected' || state === 'fully-corrected'
-    || env.source === 'station';
-  if (!atmoAlreadyDone && (env.source === 'measured' || env.source === 'defaults')
+  // AtmosphericMode is the single source of truth. DistanceState is retained
+  // only for backwards-compatible snapshots and must not silently override
+  // the explicit atmospheric choice made in the Instrument step.
+  const atmoAlreadyDone = env.source === 'station';
+  if (instrument.atmosphericModel === 'none' && (env.source === 'measured' || env.source === 'defaults')) {
+    warnings.push(`No atmospheric model configured for ${instrument.manufacturer} ${instrument.model}`);
+  } else if (!atmoAlreadyDone && (env.source === 'measured' || env.source === 'defaults')
       && env.temperatureC !== undefined && env.pressureHPa !== undefined) {
     ppm = atmosphericPpm(env.temperatureC, env.pressureHPa);
     scale = 1 + ppm * 1e-6;
@@ -190,7 +201,7 @@ export function correctDistance(input: CorrectionInput): CorrectionTrace {
     distanceAfterAtmosphereM: afterAtmo,
     datumScale,
     finalDistanceM: final,
-    formulaVersion: ATMO_FORMULA_VERSION,
+    formulaVersion: instrument.atmosphericModelVersion || ATMO_FORMULA_VERSION,
     envSource: env.source,
     warnings,
   };

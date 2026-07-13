@@ -272,8 +272,28 @@ function Step2({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraf
 // =============================================================== Step 3 ====
 function Step3({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraft>) => void }) {
   const instruments = repository.instrumentProfiles();
-  const patchStation = (id: string, p: Partial<WizardDraft['stations'][number]>) =>
-    set({ stations: draft.stations.map((s) => (s.id === id ? { ...s, ...p } : s)) });
+  const patchStation = (id: string, p: Partial<WizardDraft['stations'][number]>) => {
+    const current = draft.stations.find((s) => s.id === id);
+    if (!current) return;
+    const next = { ...current, ...p };
+    // Keep the legacy snapshot field coherent, but never expose it as a
+    // second atmospheric switch in the UI.
+    next.distanceState = next.atmosphericMode === 'station-corrected'
+      ? 'atmo-corrected'
+      : next.constantAppliedByStationM !== 0 ? 'prism-corrected' : 'raw';
+    const patch: Partial<WizardDraft> = {
+      stations: draft.stations.map((s) => (s.id === id ? next : s)),
+    };
+    // The engine reads the resolved Station-Prism setup. Propagate a station
+    // field constant to every existing prism setup so the displayed value and
+    // the actual calculation can never diverge.
+    if (p.constantAppliedByStationM !== undefined) {
+      patch.setups = draft.setups.map((setup) => setup.stationId === id
+        ? { ...setup, constantAppliedByStationM: p.constantAppliedByStationM! }
+        : setup);
+    }
+    set(patch);
+  };
 
   return (
     <div className="space-y-4">
@@ -341,7 +361,9 @@ function Step3({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraf
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2 text-2xs text-slate-500">
               <Badge tone={s.atmosphericMode === 'station-corrected' ? 'Success' : 'Ready'}>
-                {s.atmosphericMode === 'station-corrected' ? 'No atmospheric recalculation' : 'Applied to slope distance'}
+                {s.atmosphericMode === 'station-corrected' ? 'Already corrected by station'
+                  : s.atmosphericMode === 'none' ? 'Prism correction only'
+                    : 'Atmosphere applied to slope distance'}
               </Badge>
               <span>Prism correction → atmospheric correction → 3D reduction</span>
             </div>
@@ -353,18 +375,7 @@ function Step3({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraf
               <span className="text-slate-400 transition-transform group-open:rotate-180">⌄</span>
             </summary>
             <div className="border-t border-slate-100 px-3 py-3">
-              <div className="grid gap-3 md:grid-cols-3">
-                <Field label="Stored distance state" hint="What was already applied before storage in BTM.">
-                  <Select value={s.distanceState}
-                    onChange={(v) => patchStation(s.id, { distanceState: v as typeof s.distanceState })}
-                    options={[
-                      { value: 'raw', label: 'Raw slope distance' },
-                      { value: 'prism-corrected', label: 'Prism constant already applied' },
-                      { value: 'atmo-corrected', label: 'Atmosphere already applied' },
-                      { value: 'fully-corrected', label: 'Prism and atmosphere already applied' },
-                      { value: 'unknown', label: 'Unknown — treat as raw' },
-                    ]} />
-                </Field>
+              <div className="grid gap-3 md:grid-cols-2">
                 <Field label="Prism constant already applied" unit="mm" hint="BTM only applies the difference to the required constant.">
                   <NumberInput value={s.constantAppliedByStationM * 1000} step={0.1}
                     onChange={(v) => patchStation(s.id, { constantAppliedByStationM: v / 1000 })} />
@@ -379,7 +390,7 @@ function Step3({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraf
                 <strong>Formula used on the slope distance</strong><br />
                 SD₁ = SD stored + (required prism constant − constant already applied)<br />
                 SD₂ = SD₁ × (1 + ppm(T, P) × 10⁻⁶)<br />
-                A grid or datum scale remains separate and applies only to the horizontal reduction. Every value and fallback is saved in the run trace.
+                The atmospheric choice above is the single calculation rule. A grid or datum scale remains separate and applies only to the horizontal reduction. Every value and fallback is saved in the run trace.
               </div>
             </div>
           </details>
