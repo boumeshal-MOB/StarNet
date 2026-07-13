@@ -76,7 +76,7 @@ describe('atmospheric correction', () => {
     expect(atmosphericPpm(30, 950)).toBeGreaterThan(10);
   });
 
-  it('applies scale after the prism correction and never twice for corrected stations', () => {
+  it('applies scale after the prism correction and never twice when the atmospheric mode says station-corrected', () => {
     const t = correctDistance({
       observation: obs(100), station: station({ atmosphericMode: 'defaults', defaultTemperatureC: 30, defaultPressureHPa: 950 }),
       setup: { effectiveConstantM: 0.01, constantAppliedByStationM: 0 },
@@ -88,12 +88,23 @@ describe('atmospheric correction', () => {
     expect(t.distanceAfterAtmosphereM).toBeCloseTo(100.01 * (1 + ppm * 1e-6), 8);
 
     const corrected = correctDistance({
-      observation: obs(100), station: station({ distanceState: 'fully-corrected' }),
+      observation: obs(100), station: station({ atmosphericMode: 'station-corrected' }),
       setup: { effectiveConstantM: 0, constantAppliedByStationM: 0 },
-      instrument, env: { source: 'measured', temperatureC: 30, pressureHPa: 950, warnings: [] },
+      instrument, env: { source: 'station', warnings: [] },
       datumScale: 1, targetId: 'T1',
     });
     expect(corrected.atmosphericScale).toBe(1); // already corrected by the station
+  });
+
+  it('uses the explicit atmospheric mode even when a legacy distance-state snapshot disagrees', () => {
+    const t = correctDistance({
+      observation: obs(100),
+      station: station({ atmosphericMode: 'defaults', distanceState: 'atmo-corrected' }),
+      setup: { effectiveConstantM: 0, constantAppliedByStationM: 0 },
+      instrument, env: { source: 'defaults', temperatureC: 30, pressureHPa: 950, warnings: [] },
+      datumScale: 1, targetId: 'T1',
+    });
+    expect(t.atmosphericScale).toBeGreaterThan(1);
   });
 
   it('does not apply the horizontal datum scale to the slope distance', () => {
@@ -114,5 +125,14 @@ describe('atmospheric correction', () => {
     }]);
     expect(result.source).toBe('none');
     expect(result.warnings.join(' ')).toContain('Invalid T/P');
+  });
+
+  it('rejects invalid fixed atmospheric values', () => {
+    const result = lookupEnvironment(
+      station({ atmosphericMode: 'defaults', defaultTemperatureC: -9999 }),
+      '2026-07-08T10:25:00Z', [],
+    );
+    expect(result.source).toBe('none');
+    expect(result.warnings.join(' ')).toContain('Invalid fixed T/P');
   });
 });
