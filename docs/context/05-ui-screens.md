@@ -3,7 +3,7 @@
 | Route | Écran | Contenu clé |
 |---|---|---|
 | `/` | Processings | liste complète (type, site, stations, version active, statut, dernier/prochain run, qualité, sorties provisoires) + actions Open / Run now / Activate-Deactivate / Duplicate / Archive |
-| `/create` | Assistant 10 étapes | General → Data & Network → Instruments → Targets & Prisms → References → Initial Coordinates → Adjustment (Standard/Expert avec recherche) → Run → Output → Review/Test/Create ; brouillon auto-sauvé (localStorage) ; test d'ajustement réel non persisté |
+| `/create` | Assistant 10 étapes | General → Stations → Instruments → Targets & Measurement Setups → References → Initial Coordinates → Adjustment (Standard/Expert avec recherche) → Run → Output → Review/Test/Create ; brouillon auto-sauvé (localStorage) ; test d'ajustement réel non persisté |
 | `/administration` | Administration | même liste, orientée ouverture des processings |
 | `/processings/:id` | Admin processing | onglets Overview, Configurations (timeline, lifecycle, compare/diff), Stations & Instruments, Targets & Prisms, Reference Sets, Initial Coordinates, Adjustment Settings (édition → nouvelle version), Run & Synchronization, Output Variables, Runs & Results (versions par slot, catch-up, promote), Audit Log |
 | `/processings/:id/reprocess` + `/reprocess` | Reprocessing historique | plage, stratégie par-slot/forcée, dry-run/publish, aperçu (slots, config par sous-période, gaps, résultats remplacés), comparaison old→new |
@@ -19,3 +19,7 @@ Conventions UI : badges de statut partout, drawers pour l'édition, tableaux den
 (`table-dense`), Callouts pédagogiques, valeurs par défaut de template affichées
 (`Template default:` / `baseline:`), avertissement avant toute action touchant des résultats
 publiés (nouvelle version, jamais d'écrasement).
+
+Le design détaillé des étapes Instruments et Targets, notamment les cycles mélangeant
+prismes, feuilles réfléchissantes et mesures laser sans prisme, est défini dans
+[`07-measurement-setup-design.md`](07-measurement-setup-design.md).
