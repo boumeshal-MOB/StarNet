@@ -76,7 +76,7 @@ export function defaultDraft(): WizardDraft {
     initFailures: [],
     initWindowFrom: new Date(FIXTURE_START).toISOString().slice(0, 16),
     initWindowTo: new Date(FIXTURE_START + 2 * 3600000).toISOString().slice(0, 16),
-    initMode: 'known-references',
+    initMode: 'local-anchor',
     initAnchorStationId: '',
     initAnchorOrientationDeg: 0,
     provisionalSaved: false,
@@ -86,7 +86,7 @@ export function defaultDraft(): WizardDraft {
   };
 }
 
-const KEY = 'btm-wizard-draft-v1';
+const KEY = 'btm-wizard-draft-v2';
 
 export function loadDraft(): WizardDraft | null {
   try {

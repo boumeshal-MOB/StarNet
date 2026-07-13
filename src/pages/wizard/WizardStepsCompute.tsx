@@ -16,6 +16,8 @@ export function StepInitial({ draft, set }: { draft: WizardDraft; set: (p: Parti
   const [computed, setComputed] = useState(draft.provisional.length > 0);
   const anchorId = draft.initAnchorStationId || draft.stationIds[0] || '';
   const anchor = draft.stations.find((station) => station.id === anchorId);
+  const selectedReferenceSet = draft.refSets.find((setItem) => setItem.id === draft.selectedRefSetId);
+  const canCompute = draft.initMode === 'local-anchor' || (selectedReferenceSet?.points.length ?? 0) > 0;
   const patchAnchor = (patch: Partial<NonNullable<typeof anchor>>) => set({
     stations: draft.stations.map((station) => station.id === anchorId ? { ...station, ...patch } : station),
   });
@@ -95,7 +97,7 @@ export function StepInitial({ draft, set }: { draft: WizardDraft; set: (p: Parti
     <div className="space-y-4">
       <Card title="Calculate initial coordinates"
         actions={
-          <Button variant="primary" size="xs" onClick={compute}>Compute initial coordinates</Button>
+          <Button variant="primary" size="xs" disabled={!canCompute} onClick={compute}>Compute initial coordinates</Button>
         }>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <Field label="Representative period from" hint="Cycle(s) used for the initialization.">

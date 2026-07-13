@@ -54,7 +54,9 @@ export function PointIdentityPanel({
       seeds, horizontalToleranceMm / 1000, verticalToleranceMm / 1000,
     );
     setCheck(result);
-    setAccepted(new Set(result.candidates.map((candidate) => `${candidate.aTargetId}|${candidate.bTargetId}`)));
+    setAccepted(new Set(result.candidates
+      .filter((candidate) => candidate.seed || candidate.confidence >= 0.5)
+      .map((candidate) => `${candidate.aTargetId}|${candidate.bTargetId}`)));
   };
   const confirmCandidates = () => {
     if (!check) return;
@@ -124,7 +126,7 @@ export function PointIdentityPanel({
             {check.message}{check.rmsM !== undefined ? ` RMS 3D: ${fmtMm(check.rmsM, 1)}.` : ''}
           </Callout>
           {check.candidates.length > 0 && <TableWrap maxH="max-h-72">
-            <thead><tr><th>Use</th><th>{stationA}</th><th>{stationB}</th><th>H residual</th><th>V residual</th><th>Confidence</th><th>Evidence</th></tr></thead>
+            <thead><tr><th>Use</th><th>{stationA}</th><th>{stationB}</th><th>H residual (mm)</th><th>V residual (mm)</th><th>Confidence</th><th>Evidence</th></tr></thead>
             <tbody>{check.candidates.map((candidate) => {
               const key = `${candidate.aTargetId}|${candidate.bTargetId}`;
               return <tr key={key}>
@@ -162,7 +164,11 @@ export function PointIdentityPanel({
         {connectivity.connected ? <Badge tone="Success">Connected by {connectivity.sharedPoints.length} shared point(s)</Badge>
           : <Badge tone="FAIL">{connectivity.components.length} independent station groups</Badge>}
       </div>
-      {issues.filter((issue) => issue.level === 'blocking').map((issue, index) => <Callout key={index} tone="error">{issue.message}</Callout>)}
+      {issues.filter((issue) => issue.level === 'blocking' && !issue.message.includes('disconnected'))
+        .map((issue, index) => <Callout key={index} tone="error">{issue.message}</Callout>)}
+      {!connectivity.connected && <Callout tone="info">
+        This is the normal starting state for a new network. Confirm at least two known correspondences per station before continuing; names alone are never used as evidence.
+      </Callout>}
     </Card>
   );
 }

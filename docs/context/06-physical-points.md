@@ -118,6 +118,11 @@ tableau normal `Targets & Measurement Setups` et reçoivent chacune un `physical
 distinct, masqué dans le parcours standard. Cette séparation évite une liste de centaines de
 « mappings » triviaux qui rendrait les vrais points de connexion illisibles.
 
+Un réseau déconnecté est l'état initial normal d'un nouveau processing. L'interface l'affiche
+comme une information pendant le mapping ; il ne devient bloquant qu'au moment de poursuivre
+vers le calcul. Les noms de sortie provisoires restent uniques par station/cible et ne servent
+jamais à déduire l'identité physique.
+
 ## Contraintes entre points distincts : lignes de base et vecteurs
 
 Deux points physiques différents peuvent être reliés par une relation géométrique connue. Cette

@@ -143,8 +143,11 @@ function prepareNextStep(d: WizardDraft): WizardDraft {
       const { targets, setups } = preset;
       const { physicalPoints } = built;
       const procId = 'wizard-tmp';
-      const importedRefSets = repository.referenceSetsFromHeader(procId, 'wizard',
-        (id) => (isReal ? realPointIds.has(id) : id.startsWith('REF')));
+      // Synthetic fixture coordinates are never presented as user/BTM truth in
+      // a new processing. Only the converted real project may expose stored
+      // reference coordinates; otherwise the user starts from an empty set.
+      const importedRefSets = isReal ? repository.referenceSetsFromHeader(procId, 'wizard',
+        (id) => realPointIds.has(id)) : [];
       // default initialization window = first cycles of the selected stations
       const epochs = repository.observations()
         .filter((o) => d.stationIds.includes(o.stationId))
@@ -163,10 +166,17 @@ function prepareNextStep(d: WizardDraft): WizardDraft {
         createdBy: 'wizard',
         comment: 'No external reference coordinates; datum fixed by the selected anchor station.',
       };
-      const refSets = [...importedRefSets, localDatumSet];
+      const manualReferenceSet = {
+        id: 'wizard-manual-references', processingId: procId,
+        name: 'Manual reference coordinates', version: 1, points: [],
+        validFrom: new Date(first).toISOString(), activeInVersion: false, usedByRun: false,
+        createdAt: new Date().toISOString(), createdBy: 'wizard',
+        comment: 'Empty reference set: add only coordinates actually known by the user or stored in BTM.',
+      };
+      const refSets = [...importedRefSets, manualReferenceSet, localDatumSet];
       return {
         ...d, stations: preset.stations, targets, setups, physicalPoints, refSets,
-        selectedRefSetId: importedRefSets[0]?.id ?? localDatumSet.id,
+        initMode: 'local-anchor', selectedRefSetId: localDatumSet.id,
         initAnchorStationId: preset.stations[0]?.id ?? '',
         provisional: [], provisionalSaved: false,
         initWindowFrom: new Date(first - 60000).toISOString().slice(0, 16),

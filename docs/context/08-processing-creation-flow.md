@@ -173,6 +173,12 @@ seule des deux méthodes :
 2. `No coordinates — fix one station` : choisir la station ancre et saisir E/N/H/orientation ;
    `0 / 0 / 0 / 0` est autorisé pour un repère local.
 
+Pour un nouveau processing, la deuxième méthode est sélectionnée par défaut et aucun tableau de
+coordonnées n'est prérempli. Des coordonnées ne sont proposées que si elles existent réellement
+dans BTM pour le projet sélectionné, ou si l'utilisateur choisit explicitement de les saisir.
+Les coordonnées synthétiques utilisées par les scénarios de démonstration ne sont jamais
+présentées comme des données BTM.
+
 Il n'est jamais demandé de choisir un jeu vide de références puis de comprendre les alertes d'un
 datum global. Les contrôles de références ne sont affichés que pour la première méthode.
 
