@@ -452,8 +452,8 @@ export interface CorrectionTrace {
   atmosphericPpm: number;
   atmosphericScale: number;
   distanceAfterAtmosphereM: number;
-  datumScale: number;
-  finalDistanceM: number;
+  datumScale: number;          // horizontal datum/grid factor; not applied to slope here
+  finalDistanceM: number;      // corrected slope distance (prism + atmosphere)
   formulaVersion: string;
   envSource: 'measured' | 'defaults' | 'none' | 'station';
   warnings: string[];
