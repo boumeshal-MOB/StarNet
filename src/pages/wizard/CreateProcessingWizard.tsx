@@ -92,7 +92,11 @@ export function CreateProcessingWizard() {
 function validateStep(d: WizardDraft): { ok: boolean; reason?: string } {
   switch (d.step) {
     case 0:
-      return d.name.trim() ? { ok: true } : { ok: false, reason: 'Processing name is required' };
+      if (!d.name.trim()) return { ok: false, reason: 'Processing name is required' };
+      if (!Number.isFinite(Date.parse(d.configurationValidFrom))) {
+        return { ok: false, reason: 'Configuration validity start is required' };
+      }
+      return { ok: true };
     case 1:
       if (d.stationIds.length === 0) return { ok: false, reason: 'Select at least one station' };
       if (d.networkKind === 'single-station' && d.stationIds.length > 1) {
@@ -143,8 +147,11 @@ function prepareNextStep(d: WizardDraft): WizardDraft {
       const { targets, setups } = preset;
       const { physicalPoints } = built;
       const procId = 'wizard-tmp';
-      const importedRefSets = repository.referenceSetsFromHeader(procId, 'wizard',
-        (id) => (isReal ? realPointIds.has(id) : id.startsWith('REF')));
+      // Synthetic fixture coordinates are never presented as user/BTM truth in
+      // a new processing. Only the converted real project may expose stored
+      // reference coordinates; otherwise the user starts from an empty set.
+      const importedRefSets = isReal ? repository.referenceSetsFromHeader(procId, 'wizard',
+        (id) => realPointIds.has(id)) : [];
       // default initialization window = first cycles of the selected stations
       const epochs = repository.observations()
         .filter((o) => d.stationIds.includes(o.stationId))
@@ -163,10 +170,17 @@ function prepareNextStep(d: WizardDraft): WizardDraft {
         createdBy: 'wizard',
         comment: 'No external reference coordinates; datum fixed by the selected anchor station.',
       };
-      const refSets = [...importedRefSets, localDatumSet];
+      const manualReferenceSet = {
+        id: 'wizard-manual-references', processingId: procId,
+        name: 'Manual reference coordinates', version: 1, points: [],
+        validFrom: new Date(first).toISOString(), activeInVersion: false, usedByRun: false,
+        createdAt: new Date().toISOString(), createdBy: 'wizard',
+        comment: 'Empty reference set: add only coordinates actually known by the user or stored in BTM.',
+      };
+      const refSets = [...importedRefSets, manualReferenceSet, localDatumSet];
       return {
         ...d, stations: preset.stations, targets, setups, physicalPoints, refSets,
-        selectedRefSetId: importedRefSets[0]?.id ?? localDatumSet.id,
+        initMode: 'local-anchor', selectedRefSetId: localDatumSet.id,
         initAnchorStationId: preset.stations[0]?.id ?? '',
         provisional: [], provisionalSaved: false,
         initWindowFrom: new Date(first - 60000).toISOString().slice(0, 16),
@@ -228,6 +242,11 @@ function Step1({ draft, set }: { draft: WizardDraft; set: (p: Partial<WizardDraf
         <Field label="Active after creation">
           <Toggle checked={draft.activeAfterCreation} onChange={(v) => set({ activeAfterCreation: v })}
             label={draft.activeAfterCreation ? 'Yes - runs can trigger immediately' : 'No - created as inactive'} />
+        </Field>
+        <Field label="Configuration valid from"
+          hint="Start of processing-version validity. Independent from the observation sample used for initial coordinates.">
+          <TextInput type="datetime-local" value={draft.configurationValidFrom}
+            onChange={(e) => set({ configurationValidFrom: e.target.value })} />
         </Field>
       </div>
 

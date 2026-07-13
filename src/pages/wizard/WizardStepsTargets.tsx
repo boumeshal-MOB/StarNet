@@ -403,12 +403,14 @@ export function StepReferences({ draft, set }: { draft: WizardDraft; set: (p: Pa
   const [compareId, setCompareId] = useState('');
   const [newReferenceId, setNewReferenceId] = useState('');
   const compareSet = draft.refSets.find((r) => r.id === compareId);
-  const localSet = draft.refSets.find((setItem) => setItem.points.length === 0);
-  const knownSets = draft.refSets.filter((setItem) => setItem.points.length > 0);
+  const localSet = draft.refSets.find((setItem) => setItem.id.includes('local-datum'));
+  const knownSets = draft.refSets.filter((setItem) => !setItem.id.includes('local-datum'));
 
   const geometry = useMemo(() => {
     if (!activeSet) return { ok: false, messages: ['No initialization datum selected'] };
-    if (activeSet.points.length === 0) return { ok: true, messages: [], constrained: 0, spread: 0 };
+    if (activeSet.points.length === 0) return draft.initMode === 'local-anchor'
+      ? { ok: true, messages: [], constrained: 0, spread: 0 }
+      : { ok: false, messages: ['Add at least one reference with coordinates, or use the fixed-station local method.'], constrained: 0, spread: 0 };
     const messages: string[] = [];
     const constrained = activeSet.points.reduce((acc, p) =>
       acc + (p.modeE !== 'free' ? 1 : 0) + (p.modeN !== 'free' ? 1 : 0) + (p.modeH !== 'free' ? 1 : 0), 0);
@@ -422,7 +424,7 @@ export function StepReferences({ draft, set }: { draft: WizardDraft; set: (p: Pa
     const hCovered = activeSet.points.some((p) => p.modeH !== 'free');
     if (!hCovered) messages.push('No height component constrained: vertical datum missing (rank deficiency expected)');
     return { ok: messages.length === 0, messages, constrained, spread: Math.round(spread) };
-  }, [activeSet]);
+  }, [activeSet, draft.initMode]);
 
   const patchPoint = (setId: string, pointId: string, p: Partial<ReferencePoint>) => {
     set({

@@ -203,7 +203,8 @@ export function StepReview({ draft, set }: { draft: WizardDraft; set: (p: Partia
       versionNumber: 1,
       label: 'V1 - Initial configuration',
       description: draft.description || 'Created by the processing wizard',
-      validFrom: selectedRefSet.validFrom,
+      validFrom: new Date(draft.configurationValidFrom
+        + (draft.configurationValidFrom.endsWith('Z') ? '' : 'Z')).toISOString(),
       validTo: undefined,
       status: draft.activeAfterCreation ? 'active' : 'draft',
       usedByRun: false,
@@ -287,7 +288,7 @@ export function StepReview({ draft, set }: { draft: WizardDraft; set: (p: Partia
             ['Overrides', String(draft.targets.filter((t) => t.source === 'manual-override').length)],
           ]} />
           <KV items={[
-            ['Validity', `from ${draft.refSets.find((r) => r.id === draft.selectedRefSetId)?.validFrom.slice(0, 10) ?? '-'} (open-ended)`],
+            ['Configuration validity', `from ${draft.configurationValidFrom.replace('T', ' ')} (open-ended)`],
             ['Run policy', `${draft.runPolicy.triggerMode}, sync ${draft.runPolicy.syncToleranceMin} min, reuse ≤ ${draft.runPolicy.maxReusedAgeMin} min`],
             ['Catch-up', draft.runPolicy.catchUpEnabled ? `enabled (${draft.runPolicy.catchUpWindowH} h window, max ${draft.runPolicy.maxRecalcPerSlot}/slot)` : 'disabled'],
             ['Output policy', `${draft.outputPolicy.outputIntervalMin} min grid, ${draft.outputPolicy.variables.length} variables`],

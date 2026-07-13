@@ -173,8 +173,32 @@ seule des deux méthodes :
 2. `No coordinates — fix one station` : choisir la station ancre et saisir E/N/H/orientation ;
    `0 / 0 / 0 / 0` est autorisé pour un repère local.
 
+Pour un nouveau processing, la deuxième méthode est sélectionnée par défaut et aucun tableau de
+coordonnées n'est prérempli. Des coordonnées ne sont proposées que si elles existent réellement
+dans BTM pour le projet sélectionné, ou si l'utilisateur choisit explicitement de les saisir.
+Les coordonnées synthétiques utilisées par les scénarios de démonstration ne sont jamais
+présentées comme des données BTM.
+
 Il n'est jamais demandé de choisir un jeu vide de références puis de comprendre les alertes d'un
 datum global. Les contrôles de références ne sont affichés que pour la première méthode.
+
+L'utilisateur choisit ensuite une **fenêtre d'observations d'initialisation**. Cette fenêtre est
+uniquement la provenance des mesures servant au calcul ; elle ne définit ni la validité des
+coordonnées initiales ni celle de la configuration. Pour chaque couple `station × cible`, BTM
+construit une observation représentative par médiane de Hz, Vz et de la distance inclinée corrigée.
+Une valeur aberrante ou le dernier cycle de la fenêtre ne devient donc pas automatiquement la
+valeur initiale.
+
+Avant le calcul, l'écran affiche :
+
+- le nombre de points physiques disponibles / attendus et le pourcentage correspondant ;
+- le nombre de couples `station × cible` disponibles / attendus ;
+- le nombre d'observations brutes et de représentants médians utilisés ;
+- la liste des couples absents de la fenêtre sélectionnée.
+
+La validité des coordonnées initiales suit la version du processing. La date `validFrom` de cette
+version est choisie séparément dans les informations générales et reste indépendante de la
+fenêtre d'observations.
 
 Après validation de l'identité :
 
@@ -186,7 +210,7 @@ Après validation de l'identité :
 4. propager la mise en place dans le graphe des stations ;
 5. calculer une estimation par cible et la dispersion des estimations multi-stations ;
 6. rapprocher le réseau des références connues lorsqu'un système réel est fourni ;
-7. enregistrer les coordonnées initiales versionnées.
+7. enregistrer les coordonnées initiales dans le snapshot de la version du processing.
 
 Les échecs sont explicites : orientation indéterminée, composante déconnectée, points communs
 alignés, ambiguïté de transformation ou résidus supérieurs aux tolérances.

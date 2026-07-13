@@ -22,6 +22,8 @@ export interface WizardDraft {
   countryTemplateId: string;
   mode: 'standard' | 'expert';
   activeAfterCreation: boolean;
+  /** Start of configuration-version validity; independent from initialization observations. */
+  configurationValidFrom: string;
   // 2 - data source & network
   networkKind: 'single-station' | 'multi-station';
   stationIds: string[];
@@ -62,6 +64,7 @@ export function defaultDraft(): WizardDraft {
     countryTemplateId: 'country-fr',
     mode: 'standard',
     activeAfterCreation: true,
+    configurationValidFrom: new Date().toISOString().slice(0, 16),
     networkKind: 'multi-station',
     stationIds: [],
     stations: [],
@@ -76,7 +79,7 @@ export function defaultDraft(): WizardDraft {
     initFailures: [],
     initWindowFrom: new Date(FIXTURE_START).toISOString().slice(0, 16),
     initWindowTo: new Date(FIXTURE_START + 2 * 3600000).toISOString().slice(0, 16),
-    initMode: 'known-references',
+    initMode: 'local-anchor',
     initAnchorStationId: '',
     initAnchorOrientationDeg: 0,
     provisionalSaved: false,
@@ -86,7 +89,7 @@ export function defaultDraft(): WizardDraft {
   };
 }
 
-const KEY = 'btm-wizard-draft-v1';
+const KEY = 'btm-wizard-draft-v2';
 
 export function loadDraft(): WizardDraft | null {
   try {

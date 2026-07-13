@@ -97,7 +97,8 @@ export function buildTargetsAndSetups(
       btmPrismId: `PRISM-${row.RTS}-${row.TargetName}`,   // stable BTM registration id
       rawName: row.TargetName,
       adjustmentName: row.AdjustmentName,
-      outputName: row.OutputName,
+      outputName: stationIds.length > 1 && !options.reuseConfirmedDemoMapping
+        ? `${row.RTS}_${row.TargetName}` : row.OutputName,
       physicalPointId: '',                                 // resolved below
       role: isRef(row.AdjustmentName) ? 'reference' : 'monitoring',
       prismProfileId: prism?.id ?? 'prism-std0',
