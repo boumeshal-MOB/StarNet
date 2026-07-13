@@ -250,8 +250,8 @@ function StationsTab({ config }: { config: ConfigurationVersion }) {
     <Card title={`Stations & instruments (${config.label})`}>
       <TableWrap>
         <thead>
-          <tr><th>Station</th><th>Instrument profile</th><th>EDM</th><th>Height (m)</th>
-            <th>Distance state</th><th>Station constant (mm)</th><th>Atmospheric mode</th>
+          <tr><th>Station</th><th>Instrument template</th><th>EDM</th><th>Height (m)</th>
+            <th>Distance state</th><th>Atmospheric mode</th>
             <th>T/P tolerance</th><th>Missing env policy</th><th>Required</th><th>Adjustable</th></tr>
         </thead>
         <tbody>
@@ -265,7 +265,6 @@ function StationsTab({ config }: { config: ConfigurationVersion }) {
                 <td>{s.edmMode}</td>
                 <td>{s.instrumentHeightM.toFixed(3)}</td>
                 <td><Badge>{s.distanceState}</Badge></td>
-                <td className="text-right">{fmtMm(s.constantAppliedByStationM, 1)}</td>
                 <td>{s.atmosphericMode}</td>
                 <td>{s.envToleranceMin} min</td>
                 <td>{s.missingEnvPolicy}</td>

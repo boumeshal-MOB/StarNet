@@ -9,6 +9,11 @@ const CATALOGS = ['Country', 'Instrument', 'Prism Setup', 'Adjustment', 'Run', '
 export function TemplatesPage() {
   const { state, actions } = useApp();
   const [tab, setTab] = useState('Country');
+  const instrumentName = (id: string) => {
+    const instrument = repository.instrumentProfiles().find((item) => item.id === id);
+    return instrument ? `${instrument.manufacturer} ${instrument.model}` : id;
+  };
+  const prismName = (id: string) => repository.prismProfiles().find((item) => item.id === id)?.name ?? id;
 
   const usage = (templateId: string) =>
     state.configVersions.filter((c) =>
@@ -45,18 +50,20 @@ export function TemplatesPage() {
 
       {tab === 'Country' && (
         <TableWrap>
-          <thead><tr><th>Name</th><th>Version</th><th>Status</th><th>Units</th><th>Order</th><th>Projection</th>
-            <th>Refraction</th><th>Chi² α</th><th>Confidence</th><th>Used by</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Name</th><th>Version</th><th>Status</th><th>Instrument / reflector</th><th>Stored distance default</th>
+            <th>Units</th><th>Projection</th><th>Chi² α</th><th>Confidence</th><th>Used by</th><th>Actions</th></tr></thead>
           <tbody>
             {state.countryTemplates.map((c) => (
               <tr key={c.id}>
                 <td className="font-medium">{c.name}</td>
                 <td>v{c.version}</td>
                 <td><Badge tone={c.status}>{c.status}</Badge></td>
+                <td className="text-2xs">{instrumentName(c.defaultInstrumentTemplateId)}<br />{prismName(c.defaultPrismSetupTemplateId)}</td>
+                <td className="text-2xs">{c.prismCorrectionPolicy === 'already-applied'
+                  ? 'Prism + atmosphere already corrected'
+                  : `Per-target prism / ${c.defaultAtmosphericMode} atmosphere`}</td>
                 <td>{c.linearUnit} / {c.angularUnit}</td>
-                <td>{c.coordinateOrder}</td>
                 <td>{c.projectionMode}</td>
-                <td>{c.refractionCoefficient}</td>
                 <td>{c.chiSquareSignificance}</td>
                 <td>{c.confidenceLevel}</td>
                 <td>{usageCell(c.id)}</td>
@@ -69,7 +76,7 @@ export function TemplatesPage() {
 
       {tab === 'Instrument' && (
         <TableWrap>
-          <thead><tr><th>Profile</th><th>EDM</th><th>Dist σ (mm+ppm)</th><th>Hz/Vz σ (″)</th>
+          <thead><tr><th>Instrument template</th><th>EDM</th><th>Dist σ (mm+ppm)</th><th>Hz/Vz σ (″)</th>
             <th>Centering (mm)</th><th>Atmospheric model</th><th>Version</th><th>Used by</th><th>Actions</th></tr></thead>
           <tbody>
             {repository.instrumentProfiles().map((p) => (
